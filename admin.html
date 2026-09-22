@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#064b3a">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin-v3.css">
+  <title>Administration — Exam237</title>
+</head>
+<body>
+<header class="topbar">
+  <nav class="container nav">
+    <a class="wordmark" href="/"><span class="mark">E<span>▶</span></span>EXAM237</a>
+    <div class="navlinks"><span class="chip">Admin V3</span><a href="/" class="btn btn-light">Voir le site</a></div>
+  </nav>
+</header>
+
+<main class="container admin-shell">
+  <div id="adminLogin" class="form-card" style="margin:35px auto">
+    <span class="form-eyebrow">Espace privé</span>
+    <h1 style="margin:0 0 8px">Administration Exam237</h1>
+    <p class="muted" style="margin-top:0">Connecte-toi pour gérer les élèves, les sujets, les corrections et les abonnements.</p>
+    <div id="loginMsg"></div>
+    <form id="adminLoginForm">
+      <div class="field"><label>Email administrateur</label><input type="email" name="email" required></div>
+      <div class="field"><label>Mot de passe</label><input type="password" name="password" required></div>
+      <button class="btn btn-primary" style="width:100%">Se connecter</button>
+    </form>
+  </div>
+
+  <div id="adminApp" class="hidden">
+    <div class="admin-hero">
+      <div><span class="kicker">ADMINISTRATION EXAM237</span><h1>Tableau de bord</h1><p class="muted">Tout gérer depuis ton téléphone ou ton ordinateur.</p></div>
+      <button id="refresh" class="btn btn-light">↻ Actualiser</button>
+    </div>
+    <div id="adminMsg"></div>
+
+    <div class="admin-stats v3-stats">
+      <div class="stat-card"><small>ÉLÈVES</small><b id="statStudents">0</b></div>
+      <div class="stat-card"><small>EN LIGNE</small><b id="statOnline">0</b></div>
+      <div class="stat-card"><small>ABONNEMENTS ACTIFS</small><b id="statActive">0</b></div>
+      <div class="stat-card"><small>EXPIRATION ≤ 30 J</small><b id="statExpiring">0</b></div>
+      <div class="stat-card"><small>SUJETS PUBLIÉS</small><b id="statPapers">0</b></div>
+      <div class="stat-card"><small>CORRECTIONS PUBLIÉES</small><b id="statCorrections">0</b></div>
+    </div>
+
+    <div class="admin-tabs" role="tablist">
+      <button class="admin-tab active" data-tab="overview">Tableau de bord</button>
+      <button class="admin-tab" data-tab="students">Élèves</button>
+      <button class="admin-tab" data-tab="papers">Sujets</button>
+      <button class="admin-tab" data-tab="corrections">Corrections</button>
+      <button class="admin-tab" data-tab="subscriptions">Abonnements</button>
+    </div>
+
+    <section class="admin-pane active" id="pane-overview">
+      <div class="admin-grid">
+        <section class="admin-card"><div class="admin-card-head"><h2>Élèves récemment actifs</h2><span class="chip">Temps réel</span></div><div id="recentUsers" class="list"></div></section>
+        <section class="admin-card"><div class="admin-card-head"><h2>Abonnements à surveiller</h2><span class="chip">30 jours</span></div><div id="expiringUsers" class="list"></div></section>
+      </div>
+    </section>
+
+    <section class="admin-pane" id="pane-students">
+      <section class="admin-card wide">
+        <div class="admin-card-head"><div><h2>Élèves</h2><small class="muted">🟢 En ligne = activité au cours des 2 dernières minutes.</small></div></div>
+        <div class="v3-filters">
+          <input id="studentSearch" placeholder="Rechercher nom ou email…">
+          <select id="studentClassFilter"><option value="all">Toutes les classes</option></select>
+          <select id="studentStatusFilter"><option value="all">Tous</option><option value="online">En ligne</option><option value="active">Abonnement actif</option><option value="expired">Expiré / inactif</option><option value="disabled">Désactivé</option></select>
+        </div>
+        <div id="studentsList" class="student-admin-list"></div>
+      </section>
+    </section>
+
+    <section class="admin-pane" id="pane-papers">
+      <div class="admin-grid">
+        <section class="admin-card">
+          <span class="kicker">Matières</span><h2>Ajouter une matière</h2>
+          <form id="subjectForm">
+            <div class="field"><label>Nom</label><input name="name" placeholder="Mathématiques" required></div>
+            <div class="field"><label>Classes concernées</label><div id="classChecks" class="check-grid"></div></div>
+            <button class="btn btn-primary">Ajouter</button>
+          </form>
+        </section>
+        <section class="admin-card">
+          <span class="kicker">Nouveau sujet</span><h2>Importer un sujet PDF</h2>
+          <form id="paperForm">
+            <div class="two-fields"><div class="field"><label>Classe</label><select name="classCode" id="paperClass" required></select></div><div class="field"><label>Matière</label><select name="subjectId" id="paperSubject" required></select></div></div>
+            <div class="two-fields"><div class="field"><label>Année</label><input type="number" min="2000" max="2100" name="year" value="2026" required></div><div class="field"><label>Session</label><input name="sessionLabel" value="Session normale"></div></div>
+            <div class="field"><label>Titre</label><input name="title" placeholder="Mathématiques — Baccalauréat D" required></div>
+            <div class="field"><label>PDF du sujet</label><input type="file" name="paperFile" accept="application/pdf,.pdf" required><small>PDF uniquement, maximum 4 Mo.</small></div>
+            <button class="btn btn-primary">Importer le sujet</button>
+          </form>
+        </section>
+        <section class="admin-card wide"><div class="admin-card-head"><h2>Tous les sujets</h2><span class="chip" id="paperTotalChip">0</span></div><div id="papersList" class="content-admin-list"></div></section>
+      </div>
+    </section>
+
+    <section class="admin-pane" id="pane-corrections">
+      <div class="admin-grid">
+        <section class="admin-card">
+          <span class="kicker">Nouvelle correction</span><h2>PDF et/ou vidéo</h2>
+          <form id="correctionForm">
+            <div class="field"><label>Sujet concerné</label><select name="paperId" id="correctionPaper" required></select></div>
+            <div class="field"><label>Titre</label><input name="title" value="Correction"></div>
+            <div class="field"><label>PDF de correction</label><input type="file" name="correctionFile" accept="application/pdf,.pdf"><small>Facultatif — maximum 4 Mo.</small></div>
+            <div class="field"><label>Lien vidéo</label><input type="url" name="videoUrl" placeholder="https://youtube.com/…"><small>Facultatif si un PDF est ajouté. YouTube non répertorié est recommandé pour les vidéos lourdes.</small></div>
+            <button class="btn btn-primary">Ajouter la correction</button>
+          </form>
+        </section>
+        <section class="admin-card"><div class="admin-card-head"><h2>Corrections</h2><span class="chip" id="correctionTotalChip">0</span></div><div id="correctionsList" class="content-admin-list"></div></section>
+      </div>
+    </section>
+
+    <section class="admin-pane" id="pane-subscriptions">
+      <div class="admin-grid">
+        <section class="admin-card">
+          <span class="kicker">Abonnement annuel</span><h2>Générer une clé 365 jours</h2>
+          <form id="keyGen">
+            <div class="field"><label>Email de l’élève</label><input type="email" name="email" id="keyEmail" placeholder="eleve@example.com" required></div>
+            <div class="field"><label>Référence paiement</label><input name="orderRef" placeholder="Optionnel"></div>
+            <button class="btn btn-primary">Générer la clé</button>
+          </form>
+          <div id="keyResult"></div>
+        </section>
+        <section class="admin-card"><div class="admin-card-head"><h2>Clés récentes</h2><span class="chip">365 jours</span></div><div id="keysList" class="list"></div></section>
+        <section class="admin-card wide"><div class="admin-card-head"><h2>Temps restant des abonnements</h2><span class="chip">Tous les élèves</span></div><div id="subscriptionsList" class="subscription-admin-list"></div></section>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+let state={classes:[],subjects:[],papers:[],corrections:[],users:[],stats:{}};
+let keys=[];
+const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function flash(t,type='success'){const el=$('#adminMsg');el.innerHTML=`<div class="${type}">${esc(t)}</div>`;setTimeout(()=>el.innerHTML='',4500)}
+async function req(url,opts){const r=await fetch(url,opts);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur');return d}
+function fmtDate(v){return v?new Date(v).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'Jamais'}
+function remaining(until){
+  if(!until)return 'Aucun abonnement';
+  let ms=new Date(until).getTime()-Date.now();
+  if(ms<=0)return 'Expiré';
+  const d=Math.floor(ms/86400000);ms%=86400000;const h=Math.floor(ms/3600000);ms%=3600000;const m=Math.floor(ms/60000);
+  return `${d} j ${h} h ${m} min`;
+}
+function subscriptionClass(u){if(!u.premiumUntil||new Date(u.premiumUntil)<=new Date())return 'v3-bad';const ms=new Date(u.premiumUntil)-Date.now();return ms<=30*86400000?'v3-warn':'v3-good'}
+function showTab(name){
+  $$('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  $$('.admin-pane').forEach(p=>p.classList.toggle('active',p.id===`pane-${name}`));
+}
+$$('.admin-tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+async function check(){
+  try{await req('/api/admin/me');$('#adminLogin').classList.add('hidden');$('#adminApp').classList.remove('hidden');await load();setInterval(load,60000)}catch{}
+}
+$('#adminLoginForm').onsubmit=async e=>{
+  e.preventDefault();
+  try{
+    await req('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});
+    $('#adminLogin').classList.add('hidden');$('#adminApp').classList.remove('hidden');await load();setInterval(load,60000)
+  }catch(er){$('#loginMsg').innerHTML=`<div class="error">${esc(er.message)}</div>`}
+};
+
+async function load(){
+  const [c,k]=await Promise.all([req('/api/admin/content'),req('/api/admin/keys')]);
+  state=c;keys=k.keys||[];
+  $('#statStudents').textContent=state.stats.students||0;
+  $('#statOnline').textContent=state.stats.online||0;
+  $('#statActive').textContent=state.stats.activeSubscriptions||0;
+  $('#statExpiring').textContent=state.stats.expiring30||0;
+  $('#statPapers').textContent=state.stats.papers||0;
+  $('#statCorrections').textContent=state.stats.corrections||0;
+  $('#paperTotalChip').textContent=state.papers.length;
+  $('#correctionTotalChip').textContent=state.corrections.length;
+
+  const classOpts=state.classes.map(x=>`<option value="${esc(x.code)}">${esc(x.label)}</option>`).join('');
+  $('#paperClass').innerHTML=classOpts;
+  $('#studentClassFilter').innerHTML='<option value="all">Toutes les classes</option>'+classOpts;
+  $('#classChecks').innerHTML=state.classes.map(x=>`<label><input type="checkbox" name="classCodes" value="${esc(x.code)}"> ${esc(x.label)}</label>`).join('');
+  $('#paperSubject').innerHTML=state.subjects.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+  $('#correctionPaper').innerHTML=state.papers.map(x=>`<option value="${esc(x.id)}">${esc(x.class_label)} · ${esc(x.exam_year)} · ${esc(x.subject_name)} · ${esc(x.title)}</option>`).join('');
+
+  renderOverview();renderStudents();renderPapers();renderCorrections();renderSubscriptions();renderKeys();
+}
+function renderOverview(){
+  const recent=[...state.users].sort((a,b)=>new Date(b.lastSeenAt||0)-new Date(a.lastSeenAt||0)).slice(0,8);
+  $('#recentUsers').innerHTML=recent.length?recent.map(u=>`<div class="list-item"><b>${u.online?'🟢':'⚫'} ${esc(u.displayName||u.email)}</b><small>${esc(u.classLabel)} · ${u.online?'En ligne':`Dernière activité : ${fmtDate(u.lastSeenAt)}`}</small></div>`).join(''):'<div class="empty mini">Aucun élève</div>';
+  const exp=state.users.filter(u=>u.premiumUntil&&new Date(u.premiumUntil)>new Date()).sort((a,b)=>new Date(a.premiumUntil)-new Date(b.premiumUntil)).slice(0,8);
+  $('#expiringUsers').innerHTML=exp.length?exp.map(u=>`<div class="list-item"><b>${esc(u.displayName||u.email)}</b><small>${remaining(u.premiumUntil)} · expire le ${new Date(u.premiumUntil).toLocaleDateString('fr-FR')}</small></div>`).join(''):'<div class="empty mini">Aucun abonnement actif</div>';
+}
+function filteredUsers(){
+  const q=$('#studentSearch').value.toLowerCase().trim(),cl=$('#studentClassFilter').value,st=$('#studentStatusFilter').value;
+  return state.users.filter(u=>{
+    const text=`${u.displayName} ${u.email}`.toLowerCase();
+    if(q&&!text.includes(q))return false;
+    if(cl!=='all'&&u.classCode!==cl)return false;
+    if(st==='online'&&!u.online)return false;
+    if(st==='active'&&!u.premiumActive)return false;
+    if(st==='expired'&&u.premiumActive)return false;
+    if(st==='disabled'&&!u.disabled)return false;
+    return true;
+  });
+}
+function renderStudents(){
+  const rows=filteredUsers();
+  $('#studentsList').innerHTML=rows.length?rows.map(u=>`
+    <article class="student-admin-card">
+      <div class="student-admin-main">
+        <div class="online-dot ${u.online?'on':''}"></div>
+        <div><b>${esc(u.displayName||'Nom non renseigné')}</b><small>${esc(u.email)} · ${esc(u.classLabel)}</small></div>
+      </div>
+      <div><small class="muted">Dernière activité</small><b class="small-b">${u.online?'En ligne maintenant':fmtDate(u.lastSeenAt)}</b></div>
+      <div><small class="muted">Abonnement</small><b class="small-b ${subscriptionClass(u)}">${remaining(u.premiumUntil)}</b></div>
+      <div class="student-admin-actions">
+        <button class="btn btn-light btn-sm" onclick="openKey('${u.id}')">🔑 Clé</button>
+        <button class="btn btn-light btn-sm" onclick="logoutUser('${u.id}')">Déconnecter</button>
+        <button class="btn ${u.disabled?'btn-primary':'btn-danger'} btn-sm" onclick="toggleUser('${u.id}',${!u.disabled})">${u.disabled?'Réactiver':'Désactiver'}</button>
+      </div>
+    </article>`).join(''):'<div class="empty">Aucun élève trouvé.</div>';
+}
+$('#studentSearch').oninput=renderStudents;$('#studentClassFilter').onchange=renderStudents;$('#studentStatusFilter').onchange=renderStudents;
+
+function renderPapers(){
+  $('#papersList').innerHTML=state.papers.length?state.papers.map(p=>`
+    <article class="content-admin-card">
+      <div><b>${esc(p.class_label)} · ${esc(p.exam_year)} · ${esc(p.subject_name)}</b><small>${esc(p.title)} · ${esc(p.session_label)} · ${esc(p.status)}</small></div>
+      <div class="content-actions">
+        <a class="btn btn-light btn-sm" target="_blank" href="/api/admin/content?preview=paper&id=${encodeURIComponent(p.id)}">Voir PDF</a>
+        <button class="btn btn-light btn-sm" onclick="setPaper('${p.id}','published')">Publier</button>
+        <button class="btn btn-light btn-sm" onclick="setPaper('${p.id}','draft')">Brouillon</button>
+        <button class="btn btn-light btn-sm" onclick="setPaper('${p.id}','archived')">Archiver</button>
+      </div>
+    </article>`).join(''):'<div class="empty">Aucun sujet.</div>';
+}
+function renderCorrections(){
+  $('#correctionsList').innerHTML=state.corrections.length?state.corrections.map(c=>`
+    <article class="content-admin-card">
+      <div><b>${esc(c.class_label)} · ${esc(c.exam_year)} · ${esc(c.subject_name)}</b><small>${esc(c.title)} · ${esc(c.status)}</small></div>
+      <div class="content-actions">
+        ${c.correction_pdf_path?`<a class="btn btn-light btn-sm" target="_blank" href="/api/admin/content?preview=correction&id=${encodeURIComponent(c.id)}">PDF</a>`:''}
+        ${c.video_url?`<a class="btn btn-light btn-sm" target="_blank" rel="noopener" href="${esc(c.video_url)}">Vidéo</a>`:''}
+        <button class="btn btn-light btn-sm" onclick="setCorrection('${c.id}','published')">Publier</button>
+        <button class="btn btn-light btn-sm" onclick="setCorrection('${c.id}','draft')">Brouillon</button>
+        <button class="btn btn-light btn-sm" onclick="setCorrection('${c.id}','archived')">Archiver</button>
+      </div>
+    </article>`).join(''):'<div class="empty">Aucune correction.</div>';
+}
+function renderSubscriptions(){
+  const users=[...state.users].sort((a,b)=>{
+    const A=a.premiumUntil?new Date(a.premiumUntil).getTime():0,B=b.premiumUntil?new Date(b.premiumUntil).getTime():0;
+    return B-A;
+  });
+  $('#subscriptionsList').innerHTML=users.length?users.map(u=>`
+    <article class="subscription-admin-card">
+      <div><b>${esc(u.displayName||u.email)}</b><small>${esc(u.email)} · ${esc(u.classLabel)}</small></div>
+      <div><b class="${subscriptionClass(u)}">${remaining(u.premiumUntil)}</b><small>${u.premiumUntil?`Expiration : ${fmtDate(u.premiumUntil)}`:'Aucune activation'}</small></div>
+      <button class="btn btn-light btn-sm" onclick="openKey('${u.id}')">Générer une clé</button>
+    </article>`).join(''):'<div class="empty">Aucun élève.</div>';
+}
+function renderKeys(){
+  $('#keysList').innerHTML=keys.length?keys.slice(0,30).map(x=>`<div class="list-item"><b>${esc(x.assigned_email||'Sans email')}</b><small>${esc(x.code_hint)} · ${esc(x.status)} · ${esc(x.duration_days)} jours</small></div>`).join(''):'<div class="empty mini">Aucune clé</div>';
+}
+async function action(body){return req('/api/admin/content',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+async function uploadPdf(file,kind){
+  if(!file)return null;
+  if(file.type&&file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf'))throw new Error('Choisis un fichier PDF.');
+  if(file.size>4*1024*1024)throw new Error('Le PDF dépasse 4 Mo.');
+  const r=await fetch(`/api/admin/content?upload=pdf&kind=${encodeURIComponent(kind)}`,{
+    method:'PUT',headers:{'Content-Type':'application/pdf','X-Filename':encodeURIComponent(file.name)},body:file
+  });
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||'Import du PDF impossible.');
+  return d.pathname;
+}
+
+$('#subjectForm').onsubmit=async e=>{
+  e.preventDefault();try{const fd=new FormData(e.target);await action({action:'create_subject',name:fd.get('name'),classCodes:fd.getAll('classCodes')});e.target.reset();flash('Matière ajoutée.');await load()}catch(er){flash(er.message,'error')}
+};
+$('#paperForm').onsubmit=async e=>{
+  e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Import en cours…';
+  try{
+    const fd=new FormData(e.target),file=fd.get('paperFile');const paperUrl=await uploadPdf(file,'paper');
+    await action({action:'create_paper',classCode:fd.get('classCode'),subjectId:fd.get('subjectId'),year:fd.get('year'),title:fd.get('title'),sessionLabel:fd.get('sessionLabel'),paperUrl});
+    e.target.reset();flash('Sujet importé en brouillon. Vérifie-le puis publie-le.');await load()
+  }catch(er){flash(er.message,'error')}finally{btn.disabled=false;btn.textContent='Importer le sujet'}
+};
+$('#correctionForm').onsubmit=async e=>{
+  e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Ajout en cours…';
+  try{
+    const fd=new FormData(e.target),file=fd.get('correctionFile');const videoUrl=String(fd.get('videoUrl')||'').trim();
+    let correctionPdfPath=null;if(file&&file.size)correctionPdfPath=await uploadPdf(file,'correction');
+    if(!correctionPdfPath&&!videoUrl)throw new Error('Ajoute un PDF de correction ou un lien vidéo.');
+    await action({action:'add_correction',paperId:fd.get('paperId'),title:fd.get('title'),videoUrl,correctionPdfPath});
+    e.target.reset();flash('Correction ajoutée en brouillon.');await load()
+  }catch(er){flash(er.message,'error')}finally{btn.disabled=false;btn.textContent='Ajouter la correction'}
+};
+$('#keyGen').onsubmit=async e=>{
+  e.preventDefault();try{
+    const d=await req('/api/admin/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});
+    $('#keyResult').innerHTML=`<div class="key-result">${esc(d.code)}</div><small>Copie cette clé maintenant : elle ne sera plus affichée en entier.</small>`;
+    flash('Clé annuelle générée.');await load()
+  }catch(er){flash(er.message,'error')}
+};
+
+window.setPaper=async(id,status)=>{try{await action({action:'set_paper_status',id,status});flash('Statut du sujet modifié.');await load()}catch(er){flash(er.message,'error')}};
+window.setCorrection=async(id,status)=>{try{await action({action:'set_correction_status',id,status});flash('Statut de la correction modifié.');await load()}catch(er){flash(er.message,'error')}};
+window.logoutUser=async id=>{if(!confirm('Déconnecter cet élève de tous ses appareils ?'))return;try{await action({action:'logout_user',id});flash('Élève déconnecté.');await load()}catch(er){flash(er.message,'error')}};
+window.toggleUser=async(id,disabled)=>{if(!confirm(disabled?'Désactiver ce compte ? Il sera immédiatement déconnecté.':'Réactiver ce compte ?'))return;try{await action({action:'set_user_disabled',id,disabled});flash(disabled?'Compte désactivé.':'Compte réactivé.');await load()}catch(er){flash(er.message,'error')}};
+window.openKey=id=>{const u=state.users.find(x=>x.id===id);if(!u)return;showTab('subscriptions');$('#keyEmail').value=u.email;$('#keyEmail').focus()};
+$('#refresh').onclick=load;
+check();
+</script>
+</body>
+</html>
