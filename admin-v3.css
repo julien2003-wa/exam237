@@ -1,0 +1,21 @@
+/* Exam237 Admin V3 */
+.v3-stats{grid-template-columns:repeat(6,1fr)}
+.admin-tabs{display:flex;gap:8px;overflow:auto;padding:4px;margin:0 0 18px;background:#eaf1ed;border:1px solid var(--line);border-radius:15px}
+.admin-tab{border:0;background:transparent;border-radius:11px;padding:10px 13px;font-weight:850;color:#5b6d65;white-space:nowrap;cursor:pointer}
+.admin-tab.active{background:#fff;color:var(--green-900);box-shadow:0 4px 15px #0000000d}
+.admin-pane{display:none}.admin-pane.active{display:block}
+.v3-filters{display:grid;grid-template-columns:1.5fr .8fr .8fr;gap:8px;margin-bottom:14px}
+.v3-filters input,.v3-filters select{width:100%;border:1px solid var(--line);border-radius:11px;background:#fff;padding:10px 11px;outline:none}
+.check-grid{display:flex;gap:8px;flex-wrap:wrap}.check-grid label{display:inline-flex;align-items:center;gap:5px;background:#f6f9f7;border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:.82rem}
+.two-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.student-admin-list,.content-admin-list,.subscription-admin-list{display:grid;gap:9px}
+.student-admin-card{display:grid;grid-template-columns:1.35fr .9fr .9fr auto;gap:14px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:13px;background:#fbfdfc}
+.student-admin-main{display:flex;gap:10px;align-items:center}.student-admin-main b,.content-admin-card b,.subscription-admin-card b{display:block;font-size:.88rem}.student-admin-main small,.content-admin-card small,.subscription-admin-card small{display:block;color:var(--muted);font-size:.75rem;margin-top:2px}
+.online-dot{width:10px;height:10px;border-radius:50%;background:#aeb8b3;flex:0 0 auto}.online-dot.on{background:#14a66a;box-shadow:0 0 0 4px #dff5e9}
+.small-b{display:block;font-size:.79rem;margin-top:2px}.v3-good{color:#087d59}.v3-warn{color:#a36600}.v3-bad{color:#a90f18}
+.student-admin-actions,.content-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.content-admin-card,.subscription-admin-card{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:13px;background:#fbfdfc}
+.subscription-admin-card{grid-template-columns:1fr 1fr auto}.subscription-admin-card>div:nth-child(2){text-align:right}
+.empty.mini{padding:18px}
+@media(max-width:1100px){.v3-stats{grid-template-columns:repeat(3,1fr)}.student-admin-card{grid-template-columns:1fr 1fr}.student-admin-actions{justify-content:flex-start}}
+@media(max-width:760px){.v3-stats{grid-template-columns:repeat(2,1fr)}.v3-filters,.two-fields{grid-template-columns:1fr}.student-admin-card,.content-admin-card,.subscription-admin-card{grid-template-columns:1fr}.subscription-admin-card>div:nth-child(2){text-align:left}.student-admin-actions,.content-actions{justify-content:flex-start}.admin-tab{padding:9px 11px}}
