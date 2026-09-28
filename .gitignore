@@ -1,8 +1,0 @@
-node_modules
-.next
-.env
-.env.local
-.env.production
-.vercel
-.DS_Store
-npm-debug.log*
