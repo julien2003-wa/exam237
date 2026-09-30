@@ -170,6 +170,71 @@ export async function POST(req:NextRequest){
     return json({ok:true});
   }
 
+  if(action==='delete_many'){
+    const rawIds=Array.isArray(body.messageIds)?body.messageIds:[];
+    const messageIds=Array.from(
+      new Set(
+        rawIds
+          .map((value:any)=>String(value||'').trim())
+          .filter((value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
+      )
+    ).slice(0,50) as string[];
+
+    if(!messageIds.length)return fail('Aucun message sélectionné.');
+
+    const found:any[]=[];
+
+    for(const messageId of messageIds){
+      const rows=await sql`SELECT m.id,m.room_id,m.sender_user_id,r.group_id
+        FROM ex237_chat_messages m
+        JOIN ex237_chat_rooms r ON r.id=m.room_id
+        WHERE m.id=${messageId}
+        LIMIT 1`;
+
+      const message:any=rows[0];
+      if(!message)return fail('Un message sélectionné est introuvable.',404);
+
+      if(viewer.role==='student'){
+        if(!isActiveStudent(viewer)||!viewer.userId||!viewer.groupId){
+          return fail('Non autorisé.',403);
+        }
+
+        const isOwnMessage=message.sender_user_id===viewer.userId;
+        const isOwnGroup=message.group_id===viewer.groupId;
+
+        if(!isOwnMessage||!isOwnGroup){
+          return fail('Tu peux supprimer uniquement tes propres messages.',403);
+        }
+      }
+
+      found.push(message);
+    }
+
+    const roomId=found[0]?.room_id;
+
+    if(!roomId||found.some(message=>message.room_id!==roomId)){
+      return fail('Les messages doivent appartenir à la même discussion.');
+    }
+
+    for(const messageId of messageIds){
+      await sql`DELETE FROM ex237_chat_reports WHERE message_id=${messageId}`;
+      await sql`UPDATE ex237_chat_messages SET reply_to_id=NULL WHERE reply_to_id=${messageId}`;
+      await sql`DELETE FROM ex237_chat_messages WHERE id=${messageId}`;
+    }
+
+    try{
+      await publishRoomEvent(roomId,'message',{
+        deletedIds:messageIds,
+        roomId
+      });
+    }catch{}
+
+    return json({
+      ok:true,
+      deleted:messageIds.length
+    });
+  }
+
   if(action==='delete'){
     const messageId=String(body.messageId||'');
 
