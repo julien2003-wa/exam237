@@ -3,7 +3,36 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Viewer } from './exam-app';
 
 async function jfetch(url:string,opts?:RequestInit){const r=await fetch(url,{...opts,cache:'no-store'});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur');return d}
+function loadAblyBrowser(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const w = window as any;
 
+    if (w.Ably) {
+      resolve(w.Ably);
+      return;
+    }
+
+    const existing = document.querySelector(
+      'script[data-exam237-ably]'
+    ) as HTMLScriptElement | null;
+
+    if (existing) {
+      existing.addEventListener('load', () => resolve((window as any).Ably));
+      existing.addEventListener('error', reject);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.ably.com/lib/ably.min-2.js';
+    script.async = true;
+    script.dataset.exam237Ably = 'true';
+
+    script.onload = () => resolve((window as any).Ably);
+    script.onerror = () => reject(new Error('Impossible de charger Ably'));
+
+    document.head.appendChild(script);
+  });
+}
 export default function ChatView({viewer,rooms:initialRooms,notify,onUnread}:{viewer:Viewer;rooms:any[];notify:(m:string,t?:'error')=>void;onUnread:(n:number)=>void}){
   const [rooms,setRooms]=useState<any[]>(initialRooms||[]);
   const [roomId,setRoomId]=useState<string>(initialRooms?.[0]?.id||'');
