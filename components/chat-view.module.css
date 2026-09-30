@@ -268,3 +268,156 @@
     border-top-color:#00a884;
   }
 }
+
+
+/* ===== v11 — Sélection WhatsApp + suppression groupée ===== */
+.messageMenu{
+  gap:0 !important;
+  min-height:44px !important;
+  padding:3px !important;
+  border-radius:12px !important;
+}
+.messageMenu button{
+  width:42px !important;
+  min-width:42px !important;
+  height:40px !important;
+  padding:0 !important;
+  border-radius:9px !important;
+}
+.messageMenu button span{
+  font-size:1.08rem !important;
+}
+.messageMenu button small{
+  display:none !important;
+}
+
+/* La sélection remplace le header, comme le mode sélection Android. */
+.selectionHeader{
+  flex:0 0 auto;
+  min-height:58px;
+  padding:0 8px;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  background:#008069 !important;
+  color:#fff;
+}
+.selectionBack{
+  width:44px;
+  height:44px;
+  border:0;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:transparent;
+  color:#fff;
+  font-size:1.45rem;
+}
+.selectionBack:active,
+.selectionActions button:active{
+  background:rgba(255,255,255,.14);
+}
+.selectionCount{
+  min-width:32px;
+  margin-left:2px;
+  color:#fff;
+  font-size:1.05rem;
+  font-weight:800;
+}
+.selectionActions{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:2px;
+}
+.selectionActions button{
+  width:44px;
+  height:44px;
+  border:0;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:transparent;
+  color:#fff;
+  font:inherit;
+  font-size:1.15rem;
+}
+.selectionDelete{
+  font-size:1.08rem !important;
+}
+
+/* WhatsApp-like: la ligne sélectionnée est teintée,
+   sans déplacer la bulle. */
+.selectedRow{
+  position:relative;
+  margin-left:-18px;
+  margin-right:-18px;
+  padding-left:18px;
+  padding-right:18px;
+  background:rgba(0,168,132,.14);
+}
+.selectedBubble{
+  filter:none !important;
+}
+.selectionMark{
+  position:absolute;
+  left:2px;
+  top:50%;
+  z-index:4;
+  width:20px;
+  height:20px;
+  margin-top:-10px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:#00a884;
+  color:#fff;
+  font-size:.72rem;
+  font-weight:900;
+  box-shadow:0 1px 2px rgba(11,20,26,.22);
+}
+
+/* Aucune boîte/sheet de suppression en v11. */
+.deleteSheet,
+.actionSheet{
+  display:none !important;
+}
+
+@media(max-width:900px){
+  .selectedRow{
+    margin-left:-12px;
+    margin-right:-12px;
+    padding-left:12px;
+    padding-right:12px;
+  }
+  .selectionMark{
+    left:0;
+  }
+}
+
+@media(max-width:420px){
+  .selectedRow{
+    margin-left:-9px;
+    margin-right:-9px;
+    padding-left:9px;
+    padding-right:9px;
+  }
+  .selectionHeader{
+    padding-left:4px;
+    padding-right:4px;
+  }
+  .selectionActions button,
+  .selectionBack{
+    width:42px;
+    height:42px;
+  }
+}
+
+@media(prefers-color-scheme:dark){
+  .selectionHeader{
+    background:#202c33 !important;
+  }
+  .selectedRow{
+    background:rgba(0,168,132,.18);
+  }
+}

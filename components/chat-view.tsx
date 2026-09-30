@@ -81,7 +81,7 @@ export default function ChatView({
   const [showJump, setShowJump] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<any | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; align: 'left' | 'right' } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -94,6 +94,9 @@ export default function ChatView({
   const typingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const atBottomRef = useRef(true);
   const loadingOlderRef = useRef(false);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdFiredRef = useRef(false);
+  const holdStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const selected = useMemo(
     () => rooms.find(r => r.id === roomId) || rooms[0],
@@ -228,6 +231,9 @@ export default function ChatView({
   useEffect(() => {
     if (!selected?.id) return;
     setMessages([]);
+    setSelectedIds([]);
+    setSelectedMessage(null);
+    setMenuPos(null);
     setHasMore(true);
     setNewMessageCount(0);
     atBottomRef.current = true;
@@ -261,10 +267,23 @@ export default function ChatView({
         await channel.attach();
 
         channel.subscribe('message', async (event: any) => {
-          if (event?.data?.deletedId) {
+          const deletedIds = Array.isArray(event?.data?.deletedIds)
+            ? event.data.deletedIds.map(String)
+            : event?.data?.deletedId
+              ? [String(event.data.deletedId)]
+              : [];
+
+          if (deletedIds.length) {
+            const deleted = new Set(deletedIds);
+
             setMessages(current =>
-              current.filter(message => message.id !== event.data.deletedId)
+              current.filter(message => !deleted.has(message.id))
             );
+
+            setSelectedIds(current =>
+              current.filter(id => !deleted.has(id))
+            );
+
             return;
           }
 
@@ -381,26 +400,129 @@ export default function ChatView({
   };
 
 
-  const remove = async (id: string) => {
+  const canDeleteMessage = (message: any) =>
+    viewer.role === 'admin' || Boolean(message?.mine);
+
+  const removeMany = async (ids: string[]) => {
+    const unique = Array.from(new Set(ids)).filter(Boolean);
+    if (!unique.length) return;
+
     try {
       await jfetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'delete',
-          messageId: id
+          action: 'delete_many',
+          messageIds: unique
         })
       });
 
-      setDeleteTarget(null);
+      const deleted = new Set(unique);
+
+      setMessages(current =>
+        current.filter(message => !deleted.has(message.id))
+      );
+
+      setSelectedIds([]);
       setSelectedMessage(null);
-      await loadMessages(false);
+      setMenuPos(null);
+
+      notify(
+        unique.length === 1
+          ? 'Message supprimé.'
+          : `${unique.length} messages supprimés.`
+      );
     } catch (e: any) {
       notify(e.message, 'error');
     }
   };
 
+  const beginSelection = (message: any) => {
+    setSelectedMessage(null);
+    setMenuPos(null);
+    setSelectedIds(current =>
+      current.includes(message.id)
+        ? current
+        : [...current, message.id]
+    );
+  };
 
+  const toggleSelection = (message: any) => {
+    setSelectedIds(current => {
+      if (current.includes(message.id)) {
+        return current.filter(id => id !== message.id);
+      }
+
+      return [...current, message.id];
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+    setSelectedMessage(null);
+    setMenuPos(null);
+  };
+
+  const startHold = (
+    event: React.PointerEvent<HTMLElement>,
+    message: any
+  ) => {
+    holdFiredRef.current = false;
+    holdStartRef.current = {
+      x: event.clientX,
+      y: event.clientY
+    };
+
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+
+    holdTimerRef.current = setTimeout(() => {
+      holdFiredRef.current = true;
+      beginSelection(message);
+
+      try {
+        navigator.vibrate?.(18);
+      } catch {}
+    }, 420);
+  };
+
+  const moveHold = (event: React.PointerEvent<HTMLElement>) => {
+    const start = holdStartRef.current;
+    if (!start || !holdTimerRef.current) return;
+
+    const dx = Math.abs(event.clientX - start.x);
+    const dy = Math.abs(event.clientY - start.y);
+
+    if (dx > 10 || dy > 10) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
+  const stopHold = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    holdStartRef.current = null;
+  };
+
+  const onMessageTap = (
+    event: React.MouseEvent<HTMLElement>,
+    message: any
+  ) => {
+    if (holdFiredRef.current) {
+      holdFiredRef.current = false;
+      return;
+    }
+
+    if (selectedIds.length) {
+      toggleSelection(message);
+      return;
+    }
+
+    openMessageMenu(event, message);
+  };
 
 
   const pin = async (id: string, pinned: boolean) => {
@@ -527,6 +649,43 @@ export default function ChatView({
     };
   }, []);
 
+  const selectedMessages = messages.filter(message =>
+    selectedIds.includes(message.id)
+  );
+
+  const canDeleteSelection =
+    selectedMessages.length > 0 &&
+    selectedMessages.every(canDeleteMessage);
+
+  const copySelected = async () => {
+    if (!selectedMessages.length) return;
+
+    const value = selectedMessages
+      .map(message => String(message.text || ''))
+      .join('\n');
+
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = value;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      document.body.removeChild(area);
+    }
+
+    clearSelection();
+    notify(
+      selectedMessages.length === 1
+        ? 'Message copié.'
+        : `${selectedMessages.length} messages copiés.`
+    );
+  };
+
   const statusText = typing
     ? typing
     : realtime && onlineCount > 1
@@ -559,20 +718,74 @@ export default function ChatView({
       ) : null}
 
       <div className={styles.chat}>
-        <header className={styles.header}>
-          <div className={styles.contact}>
-            <div className={styles.avatar}>
-              {String(selected?.group_label || selected?.title || 'E')
-                .slice(0, 2)
-                .toUpperCase()}
-            </div>
+        {selectedIds.length ? (
+          <header className={`${styles.header} ${styles.selectionHeader}`}>
+            <button
+              type="button"
+              className={styles.selectionBack}
+              onClick={clearSelection}
+              aria-label="Annuler la sélection"
+            >
+              ←
+            </button>
 
-            <div className={styles.contactText}>
-              <strong>{selected?.title || selected?.group_label || 'Chat'}</strong>
-              <span className={typing ? styles.typing : ''}>{statusText}</span>
+            <strong className={styles.selectionCount}>
+              {selectedIds.length}
+            </strong>
+
+            <div className={styles.selectionActions}>
+              {selectedIds.length === 1 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReply(selectedMessages[0]);
+                    clearSelection();
+                  }}
+                  aria-label="Répondre"
+                  title="Répondre"
+                >
+                  ↩
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={copySelected}
+                aria-label="Copier"
+                title="Copier"
+              >
+                ⧉
+              </button>
+
+              {canDeleteSelection ? (
+                <button
+                  type="button"
+                  className={styles.selectionDelete}
+                  onClick={() => removeMany(selectedIds)}
+                  aria-label="Supprimer les messages sélectionnés"
+                  title="Supprimer"
+                >
+                  🗑
+                </button>
+              ) : null}
             </div>
-          </div>
-        </header>
+          </header>
+        ) : (
+          <header className={styles.header}>
+            <div className={styles.contact}>
+              <div className={styles.avatar}>
+                {String(selected?.group_label || selected?.title || 'E')
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </div>
+
+              <div className={styles.contactText}>
+                <strong>{selected?.title || selected?.group_label || 'Chat'}</strong>
+                <span className={typing ? styles.typing : ''}>{statusText}</span>
+              </div>
+            </div>
+          </header>
+        )}
 
         <div
           ref={messagesRef}
@@ -611,17 +824,38 @@ export default function ChatView({
                   </div>
                 ) : null}
 
-                <div className={`${styles.row} ${m.mine ? styles.mineRow : ''}`}>
+                <div
+                  className={`${styles.row} ${
+                    m.mine ? styles.mineRow : ''
+                  } ${
+                    selectedIds.includes(m.id) ? styles.selectedRow : ''
+                  }`}
+                >
+                  {selectedIds.includes(m.id) ? (
+                    <span className={styles.selectionMark}>✓</span>
+                  ) : null}
+
                   <button
                     type="button"
                     className={`${styles.bubble} ${
                       m.mine ? styles.mineBubble : styles.otherBubble
                     } ${
                       m.senderUserId === null ? styles.adminBubble : ''
+                    } ${
+                      selectedIds.includes(m.id) ? styles.selectedBubble : ''
                     }`}
-                    onClick={e => openMessageMenu(e, m)}
+                    onClick={e => onMessageTap(e, m)}
+                    onPointerDown={e => startHold(e, m)}
+                    onPointerMove={moveHold}
+                    onPointerUp={stopHold}
+                    onPointerCancel={stopHold}
+                    onPointerLeave={stopHold}
                     onContextMenu={e => e.preventDefault()}
-                    aria-label="Options du message"
+                    aria-label={
+                      selectedIds.length
+                        ? 'Sélectionner ou désélectionner le message'
+                        : 'Options du message'
+                    }
                   >
                     {!m.mine ? (
                       <div className={styles.sender}>{m.senderName}</div>
@@ -769,23 +1003,6 @@ export default function ChatView({
             style={{ top: menuPos.top, left: menuPos.left }}
             onClick={e => e.stopPropagation()}
           >
-            {(selectedMessage.mine || viewer.role === 'admin') ? (
-              <button
-                type="button"
-                className={styles.menuDanger}
-                onClick={() => {
-                  setDeleteTarget(selectedMessage);
-                  setSelectedMessage(null);
-                  setMenuPos(null);
-                }}
-                aria-label="Supprimer"
-                title="Supprimer"
-              >
-                <span>🗑</span>
-                <small>Supprimer</small>
-              </button>
-            ) : null}
-
             <button
               type="button"
               onClick={() => {
@@ -797,20 +1014,24 @@ export default function ChatView({
               title="Répondre"
             >
               <span>↩</span>
-              <small>Répondre</small>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                copyMessage(selectedMessage);
-                setMenuPos(null);
-              }}
+              onClick={() => copyMessage(selectedMessage)}
               aria-label="Copier"
               title="Copier"
             >
               <span>⧉</span>
-              <small>Copier</small>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => beginSelection(selectedMessage)}
+              aria-label="Sélectionner"
+              title="Sélectionner plusieurs messages"
+            >
+              <span>☑</span>
             </button>
 
             {viewer.role === 'admin' ? (
@@ -824,34 +1045,22 @@ export default function ChatView({
                 title={selectedMessage.isPinned ? 'Désépingler' : 'Épingler'}
               >
                 <span>📌</span>
-                <small>{selectedMessage.isPinned ? 'Désépingler' : 'Épingler'}</small>
+              </button>
+            ) : null}
+
+            {canDeleteMessage(selectedMessage) ? (
+              <button
+                type="button"
+                className={styles.menuDanger}
+                onClick={() => removeMany([selectedMessage.id])}
+                aria-label="Supprimer"
+                title="Supprimer"
+              >
+                <span>🗑</span>
               </button>
             ) : null}
           </div>
         </>
-      ) : null}
-
-      {deleteTarget ? (
-        <div className={styles.overlay} onClick={() => setDeleteTarget(null)}>
-          <div className={styles.deleteSheet} onClick={e => e.stopPropagation()}>
-            <div className={styles.sheetHandle} />
-            <h3>Supprimer le message ?</h3>
-
-            <button
-              className={styles.deleteForEveryone}
-              onClick={() => remove(deleteTarget.id)}
-            >
-              Supprimer pour tout le monde
-            </button>
-
-            <button
-              className={styles.cancelDelete}
-              onClick={() => setDeleteTarget(null)}
-            >
-              Annuler
-            </button>
-          </div>
-        </div>
       ) : null}
     </section>
   );
