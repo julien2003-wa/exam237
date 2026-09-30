@@ -1,0 +1,257 @@
+/*
+  Exam237 — App Shell fixe
+  Le document ne scrolle plus.
+  Seule la zone centrale de l'application peut défiler.
+*/
+
+html,
+body{
+  width:100%;
+  height:100%;
+  margin:0;
+  overflow:hidden !important;
+  overscroll-behavior:none;
+}
+
+body.exam237-app-mode{
+  position:relative;
+  min-height:0 !important;
+  overflow:hidden !important;
+}
+
+/* ===== Structure principale fixe ===== */
+.app-shell{
+  position:fixed !important;
+  left:0;
+  right:0;
+  top:var(--exam237-app-top,0px);
+  width:100%;
+  height:var(--exam237-app-height,100dvh) !important;
+  min-height:0 !important;
+  max-height:var(--exam237-app-height,100dvh);
+  overflow:hidden !important;
+  display:grid;
+  grid-template-columns:240px minmax(0,1fr);
+  background:var(--bg);
+}
+
+.side-nav{
+  position:relative !important;
+  top:auto !important;
+  height:100% !important;
+  min-height:0;
+  overflow:hidden;
+}
+
+.main{
+  width:100%;
+  height:100% !important;
+  min-width:0;
+  min-height:0;
+  padding-bottom:0 !important;
+  overflow:hidden !important;
+  display:grid;
+  grid-template-rows:72px minmax(0,1fr);
+}
+
+/* Le header n'a plus besoin d'être sticky :
+   il est déjà dans une ligne fixe de l'app-shell. */
+.topbar{
+  position:relative !important;
+  top:auto !important;
+  left:auto;
+  right:auto;
+  z-index:20;
+  width:100%;
+  height:72px;
+  min-height:72px;
+  flex:0 0 72px;
+}
+
+/* ===== Zone centrale : seule zone générale scrollable ===== */
+.content{
+  width:min(1100px,100%);
+  height:100%;
+  min-height:0;
+  margin:0 auto;
+  padding:24px 28px 28px !important;
+  overflow-y:auto !important;
+  overflow-x:hidden !important;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-gutter:stable;
+  scroll-behavior:auto;
+}
+
+/* Les écrans restent contenus dans la zone centrale. */
+.content > section{
+  max-width:100%;
+}
+
+/* ===== Chat : le contenu général ne scrolle pas.
+   Seule la liste des messages scrolle dans le composant Chat. ===== */
+.content[data-tab="chat"]{
+  width:100%;
+  max-width:none;
+  padding:0 !important;
+  overflow:hidden !important;
+}
+
+.content[data-tab="chat"] > section{
+  position:relative !important;
+  inset:auto !important;
+  top:auto !important;
+  right:auto !important;
+  bottom:auto !important;
+  left:auto !important;
+  z-index:auto !important;
+
+  width:100% !important;
+  max-width:none !important;
+  height:100% !important;
+  min-height:0 !important;
+
+  display:flex !important;
+  flex-direction:column !important;
+  overflow:hidden !important;
+  background:transparent;
+}
+
+/* Le bloc principal du chat est celui qui contient son header. */
+.content[data-tab="chat"] > section > div:has(> header){
+  width:100% !important;
+  height:100% !important;
+  min-height:0 !important;
+  flex:1 1 auto !important;
+  border-radius:0 !important;
+}
+
+/* Empêche les anciennes règles mobiles du chat de reprendre
+   le contrôle de tout le viewport. */
+.content[data-tab="chat"] [class*="keyboardOpen"]{
+  position:relative !important;
+  inset:auto !important;
+  top:auto !important;
+  height:100% !important;
+}
+
+/* ===== Écrans hors app-shell (connexion, reset, offline) =====
+   Ils ont leur propre scroll interne si nécessaire. ===== */
+.auth-page,
+.center-screen{
+  width:100%;
+  height:var(--exam237-app-height,100dvh) !important;
+  min-height:0 !important;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* Toast : reste au-dessus du shell sans déplacer l'interface. */
+.toast{
+  z-index:2000 !important;
+}
+
+/* ===== Téléphone / tablette ===== */
+@media(max-width:900px){
+  .app-shell{
+    grid-template-columns:1fr !important;
+    grid-template-rows:minmax(0,1fr) calc(70px + env(safe-area-inset-bottom));
+  }
+
+  .side-nav{
+    display:none !important;
+  }
+
+  .main{
+    grid-column:1;
+    grid-row:1;
+    height:100% !important;
+    min-height:0;
+    padding-bottom:0 !important;
+    grid-template-rows:64px minmax(0,1fr);
+  }
+
+  .topbar{
+    height:64px !important;
+    min-height:64px !important;
+    padding:0 15px !important;
+  }
+
+  .content{
+    width:100%;
+    max-width:none;
+    min-height:0;
+    padding:16px 14px 16px !important;
+  }
+
+  .mobile-nav{
+    position:relative !important;
+    z-index:50;
+    left:auto !important;
+    right:auto !important;
+    bottom:auto !important;
+
+    grid-column:1;
+    grid-row:2;
+
+    width:100%;
+    height:100% !important;
+    min-height:0;
+
+    padding-bottom:env(safe-area-inset-bottom);
+    display:flex !important;
+    flex:0 0 auto;
+  }
+
+  .content[data-tab="chat"]{
+    padding:0 !important;
+  }
+
+  .content[data-tab="chat"] > section{
+    height:100% !important;
+    max-height:100% !important;
+  }
+}
+
+/* Quand le clavier Android apparaît :
+   l'app-shell se cale sur le visual viewport.
+   La navigation du bas se masque pour laisser la place au clavier.
+   Le header reste fixe et seule la zone centrale se réduit. */
+@media(max-width:900px){
+  body.exam237-keyboard-open .app-shell{
+    grid-template-rows:minmax(0,1fr) !important;
+  }
+
+  body.exam237-keyboard-open .mobile-nav{
+    display:none !important;
+  }
+
+  body.exam237-keyboard-open .main{
+    grid-row:1;
+    height:100% !important;
+  }
+
+  body.exam237-keyboard-open .content{
+    min-height:0;
+  }
+}
+
+/* Petits téléphones */
+@media(max-width:560px){
+  .content{
+    padding:12px 10px 12px !important;
+  }
+
+  .content[data-tab="chat"]{
+    padding:0 !important;
+  }
+}
+
+/* Desktop large : aucun scroll sur le document. */
+@media(min-width:901px){
+  .mobile-nav{
+    display:none !important;
+  }
+}
