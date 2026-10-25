@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import './app-shell.css';
+import './admin.css';
 import PwaBootstrap from '@/components/pwa-bootstrap';
 import AppShellRuntime from '@/components/app-shell-runtime';
 

@@ -87,6 +87,10 @@ export default function ChatView({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [newMessageCount, setNewMessageCount] = useState(0);
+  const [assistantAvailable, setAssistantAvailable] = useState(false);
+  const [assistantWaitingSince, setAssistantWaitingSince] = useState<number | null>(null);
+  const [reportTarget, setReportTarget] = useState<any | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -134,6 +138,7 @@ export default function ChatView({
       );
 
       const latest = d.messages || [];
+      setAssistantAvailable(Boolean(d.assistantAvailable));
 
       setMessages(current => {
         if (scroll || current.length === 0) return latest;
@@ -371,7 +376,7 @@ export default function ChatView({
     setShowEmoji(false);
 
     try {
-      await jfetch('/api/chat', {
+      const result = await jfetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,6 +387,7 @@ export default function ChatView({
         })
       });
 
+      if (result?.assistant) startAssistantWait();
       setReply(null);
 
       try {
@@ -567,6 +573,73 @@ export default function ChatView({
     notify('Message copié.');
   };
 
+  const reportMessage = async (message: any, reason: string) => {
+    setReportTarget(null);
+
+    try {
+      const d = await jfetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'report', messageId: message.id, reason })
+      });
+
+      notify(d?.already
+        ? 'Tu as déjà signalé ce message.'
+        : 'Merci, le message a été signalé à Exam237.');
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const assistantBaselineRef = useRef<Set<string>>(new Set());
+
+  const startAssistantWait = () => {
+    assistantBaselineRef.current = new Set(
+      messages.filter(m => m.isAssistant).map(m => String(m.id))
+    );
+    setAssistantWaitingSince(Date.now());
+  };
+
+  const askAssistantFor = async (message: any) => {
+    setSelectedMessage(null);
+    setMenuPos(null);
+
+    try {
+      await jfetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'assistant_reply', messageId: message.id })
+      });
+
+      startAssistantWait();
+      notify('L’assistant prépare sa réponse…');
+    } catch (e: any) {
+      notify(e.message, 'error');
+    }
+  };
+
+  const insertAssistantMention = () => {
+    setText(v => (/@\s*(exam\s*237|assistant)\b/i.test(v) ? v : `@assistant ${v}`));
+    setShowEmoji(false);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  useEffect(() => {
+    if (!assistantWaitingSince) return;
+
+    const answered = messages.some(
+      m => m.isAssistant && !assistantBaselineRef.current.has(String(m.id))
+    );
+
+    if (answered) {
+      setAssistantWaitingSince(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setAssistantWaitingSince(null), 75000);
+    return () => window.clearTimeout(timer);
+  }, [assistantWaitingSince, messages]);
+
   const openMessageMenu = (event: React.MouseEvent<HTMLElement>, message: any) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = viewer.role === 'admin' ? 260 : 210;
@@ -688,9 +761,11 @@ export default function ChatView({
 
   const statusText = typing
     ? typing
-    : realtime && onlineCount > 1
-      ? `${onlineCount} en ligne`
-      : 'En ligne';
+    : assistantWaitingSince
+      ? 'L’assistant prépare sa réponse…'
+      : realtime && onlineCount > 1
+        ? `${onlineCount} en ligne`
+        : 'En ligne';
 
   if (!rooms.length) {
     return <div className="empty">Aucun groupe de discussion disponible.</div>;
@@ -781,7 +856,7 @@ export default function ChatView({
 
               <div className={styles.contactText}>
                 <strong>{selected?.title || selected?.group_label || 'Chat'}</strong>
-                <span className={typing ? styles.typing : ''}>{statusText}</span>
+                <span className={typing || assistantWaitingSince ? styles.typing : ''}>{statusText}</span>
               </div>
             </div>
           </header>
@@ -808,6 +883,9 @@ export default function ChatView({
               <span>💬</span>
               <strong>Discussion Exam237</strong>
               <small>Les nouveaux messages apparaîtront ici.</small>
+              {assistantAvailable ? (
+                <small>Astuce : écris @assistant suivi de ta question pour obtenir une explication de l’assistant IA.</small>
+              ) : null}
             </div>
           ) : null}
 
@@ -842,6 +920,8 @@ export default function ChatView({
                     } ${
                       m.senderUserId === null ? styles.adminBubble : ''
                     } ${
+                      m.isAssistant ? styles.assistantBubble : ''
+                    } ${
                       selectedIds.includes(m.id) ? styles.selectedBubble : ''
                     }`}
                     onClick={e => onMessageTap(e, m)}
@@ -858,7 +938,9 @@ export default function ChatView({
                     }
                   >
                     {!m.mine ? (
-                      <div className={styles.sender}>{m.senderName}</div>
+                      <div className={`${styles.sender} ${m.isAssistant ? styles.assistantSender : ''}`}>
+                        {m.isAssistant ? '🎓 ' : ''}{m.senderName}
+                      </div>
                     ) : null}
 
                     {m.isPinned ? (
@@ -875,6 +957,9 @@ export default function ChatView({
                     <div className={styles.messageText}>{m.text}</div>
 
                     <div className={styles.meta}>
+                      {m.isAssistant ? (
+                        <span className={styles.aiNote}>IA · peut se tromper</span>
+                      ) : null}
                       <span>
                         {new Date(m.createdAt).toLocaleTimeString('fr-FR', {
                           hour: '2-digit',
@@ -940,7 +1025,7 @@ export default function ChatView({
         ) : null}
 
         <div className={styles.composer}>
-          <div className={styles.inputShell}>
+          <div className={`${styles.inputShell} ${assistantAvailable ? styles.inputShellAssistant : ''}`}>
             <button
               className={styles.iconButton}
               type="button"
@@ -951,9 +1036,10 @@ export default function ChatView({
             </button>
 
             <textarea
+              ref={inputRef}
               rows={1}
               value={text}
-              placeholder="Message"
+              placeholder={assistantAvailable ? 'Message ou @assistant…' : 'Message'}
               className={styles.input}
               onChange={e => {
                 setText(e.target.value);
@@ -970,6 +1056,18 @@ export default function ChatView({
                 }
               }}
             />
+
+            {assistantAvailable ? (
+              <button
+                className={`${styles.iconButton} ${styles.assistantButton}`}
+                type="button"
+                onClick={insertAssistantMention}
+                aria-label="Poser une question à l’assistant IA"
+                title="Poser une question à l’assistant IA"
+              >
+                🎓
+              </button>
+            ) : null}
           </div>
 
           <button
@@ -1048,6 +1146,32 @@ export default function ChatView({
               </button>
             ) : null}
 
+            {viewer.role === 'admin' && assistantAvailable && !selectedMessage.isAssistant ? (
+              <button
+                type="button"
+                onClick={() => askAssistantFor(selectedMessage)}
+                aria-label="Faire répondre l’assistant IA"
+                title="Faire répondre l’assistant IA"
+              >
+                <span>🎓</span>
+              </button>
+            ) : null}
+
+            {viewer.role === 'student' && !selectedMessage.mine ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setReportTarget(selectedMessage);
+                  setSelectedMessage(null);
+                  setMenuPos(null);
+                }}
+                aria-label="Signaler"
+                title="Signaler à Exam237"
+              >
+                <span>🚩</span>
+              </button>
+            ) : null}
+
             {canDeleteMessage(selectedMessage) ? (
               <button
                 type="button"
@@ -1062,6 +1186,40 @@ export default function ChatView({
           </div>
         </>
       ) : null}
+
+      {reportTarget ? (
+        <div className={styles.overlay} onClick={() => setReportTarget(null)}>
+          <div
+            className={styles.reportSheet}
+            role="dialog"
+            aria-label="Signaler le message"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={styles.sheetHandle} />
+            <p className={styles.sheetTitle}>Pourquoi signales-tu ce message ?</p>
+            {REPORT_REASONS
+              .filter(r => !r.assistantOnly || reportTarget.isAssistant)
+              .map(r => (
+                <button key={r.label} type="button" onClick={() => reportMessage(reportTarget, r.label)}>
+                  <span>{r.icon}</span>
+                  {r.label}
+                </button>
+              ))}
+            <button type="button" onClick={() => setReportTarget(null)}>
+              <span>✕</span>
+              Annuler
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
+
+const REPORT_REASONS: Array<{ icon: string; label: string; assistantOnly?: boolean }> = [
+  { icon: '❌', label: 'Réponse fausse de l’assistant', assistantOnly: true },
+  { icon: '😡', label: 'Insulte ou harcèlement' },
+  { icon: '🔞', label: 'Contenu inapproprié' },
+  { icon: '📢', label: 'Spam ou publicité' },
+  { icon: '🚩', label: 'Autre raison' }
+];
