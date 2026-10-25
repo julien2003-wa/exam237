@@ -421,3 +421,89 @@
     background:rgba(0,168,132,.18);
   }
 }
+
+/* ===== Assistant IA Exam237 + signalements ===== */
+.assistantBubble{
+  background:#eef7ff;
+  box-shadow:inset 3px 0 0 #2f80d1,0 1px 1px rgba(11,20,26,.13);
+}
+.otherBubble.assistantBubble:before{
+  border-color:transparent #eef7ff transparent transparent;
+}
+.assistantSender{
+  color:#1d5fa8;
+}
+.aiNote{
+  margin-right:auto;
+  padding-right:8px;
+  color:#5b7a99;
+  font-style:italic;
+}
+.inputShellAssistant{
+  grid-template-columns:auto 1fr auto;
+}
+.assistantButton{
+  font-size:1.15rem;
+}
+.reportSheet{
+  width:100%;
+  display:grid;
+  padding:7px 10px calc(12px + env(safe-area-inset-bottom));
+  border-radius:18px 18px 0 0;
+  background:#fff;
+  box-shadow:0 -10px 30px rgba(11,20,26,.12);
+}
+.reportSheet button{
+  min-height:50px;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:0 12px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:#17231f;
+  text-align:left;
+  font-weight:700;
+}
+.reportSheet button:active{
+  background:#eef2f0;
+}
+.reportSheet button span{
+  width:28px;
+  text-align:center;
+  font-size:1.2rem;
+}
+.sheetTitle{
+  margin:2px 12px 6px;
+  color:#41514b;
+  font-size:.92rem;
+  font-weight:800;
+}
+@media(prefers-color-scheme:dark){
+  .assistantBubble{
+    background:#1b2b3a;
+    box-shadow:inset 3px 0 0 #5aa9f0,0 1px 1px rgba(0,0,0,.25);
+  }
+  .otherBubble.assistantBubble:before{
+    border-color:transparent #1b2b3a transparent transparent;
+  }
+  .assistantSender{
+    color:#8cc4f5;
+  }
+  .aiNote{
+    color:#8aa4bd;
+  }
+  .sheetTitle{
+    color:#d1d7db;
+  }
+  .reportSheet{
+    background:#2a3942;
+  }
+  .reportSheet button{
+    color:#e9edef;
+  }
+  .reportSheet button:active{
+    background:#33444e;
+  }
+}

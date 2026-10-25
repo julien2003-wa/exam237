@@ -1,12 +1,27 @@
 import crypto from 'node:crypto';
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { decryptMessage, encryptMessage } from '@/lib/crypto';
 import { getViewer, isActiveStudent } from '@/lib/auth';
 import { chatChannel, createRealtimeToken, publishRoomEvent } from '@/lib/realtime';
+import { ASSISTANT_NAME, assistantConfigured, detectAssistantTrigger, runAssistant, type AssistantTrigger } from '@/lib/assistant';
+
+// Laisse le temps à l'assistant de répondre après l'envoi du message (voir after()).
+export const maxDuration = 60;
 
 const json=(data:Record<string,unknown>,status=200)=>NextResponse.json(data,{status});
 const fail=(message:string,status=400)=>json({error:message},status);
+
+// La réponse de l'assistant est préparée après l'envoi de la réponse HTTP :
+// l'élève n'attend pas, le message de l'assistant arrive ensuite dans le chat.
+function inBackground(task:()=>Promise<unknown>){
+  const run=()=>task().catch(e=>console.error('Assistant (arrière-plan):',e));
+  try{after(run);}catch{void run();}
+}
+
+function scheduleAssistant(roomId:string,questionId:string,userId:string|null,trigger:AssistantTrigger){
+  inBackground(()=>runAssistant({roomId,questionId,userId,trigger}));
+}
 
 async function roomForStudent(groupId:string){
   const sql=db();
@@ -80,6 +95,7 @@ export async function GET(req:NextRequest){
         roomId:m.room_id,
         senderUserId:m.sender_user_id,
         senderName:m.sender_name,
+        isAssistant:m.sender_user_id===null&&m.sender_name===ASSISTANT_NAME,
         text,
         replyToId:m.reply_to_id,
         replySender:m.reply_sender||null,
@@ -89,7 +105,7 @@ export async function GET(req:NextRequest){
         mine:viewer.role==='student'&&viewer.userId===m.sender_user_id
       };
     });
-    return json({messages,realtimeConfigured:!!process.env.ABLY_API_KEY});
+    return json({messages,realtimeConfigured:!!process.env.ABLY_API_KEY,assistantName:ASSISTANT_NAME,assistantAvailable:assistantConfigured()});
   }
 
   return fail('Action inconnue.',404);
@@ -148,7 +164,17 @@ export async function POST(req:NextRequest){
       });
     }catch(e){console.error('Realtime publish',e)}
 
-    return json({ok:true,id},201);
+    // @assistant, réponse à l'assistant ou (mode automatique) question d'un élève.
+    let assistantTriggered=false;
+    try{
+      const trigger=await detectAssistantTrigger({text,replyToId,roomId,fromStudent:viewer.role==='student'});
+      if(trigger){
+        scheduleAssistant(roomId,id,viewer.role==='student'?viewer.userId:null,trigger);
+        assistantTriggered=trigger!=='auto';
+      }
+    }catch(e){console.error('Assistant trigger',e)}
+
+    return json({ok:true,id,assistant:assistantTriggered},201);
   }
 
   if(action==='report'){
@@ -157,12 +183,16 @@ export async function POST(req:NextRequest){
     const messageId=String(body.messageId||'');
     const reason=String(body.reason||'').trim().slice(0,300)||null;
 
-    const rows=await sql`SELECT m.id FROM ex237_chat_messages m
+    const rows=await sql`SELECT m.id,m.sender_user_id FROM ex237_chat_messages m
       JOIN ex237_chat_rooms r ON r.id=m.room_id
       WHERE m.id=${messageId} AND r.group_id=${viewer.groupId}
       LIMIT 1`;
 
     if(!rows[0])return fail('Message introuvable.',404);
+    if((rows[0] as any).sender_user_id===viewer.userId)return fail('Tu ne peux pas signaler ton propre message.');
+
+    const already=await sql`SELECT id FROM ex237_chat_reports WHERE message_id=${messageId} AND reporter_user_id=${viewer.userId} LIMIT 1`;
+    if(already[0])return json({ok:true,already:true});
 
     await sql`INSERT INTO ex237_chat_reports(id,message_id,reporter_user_id,reason,created_at)
       VALUES(${crypto.randomUUID()},${messageId},${viewer.userId},${reason},NOW())`;
@@ -256,6 +286,8 @@ export async function POST(req:NextRequest){
       if(!isOwnMessage||!isOwnGroup)return fail('Tu peux supprimer uniquement tes propres messages.',403);
     }
 
+    await sql`DELETE FROM ex237_chat_reports WHERE message_id=${messageId}`;
+    await sql`UPDATE ex237_chat_messages SET reply_to_id=NULL WHERE reply_to_id=${messageId}`;
     await sql`DELETE FROM ex237_chat_messages WHERE id=${messageId}`;
 
     try{
@@ -301,6 +333,17 @@ export async function POST(req:NextRequest){
       SET chat_muted_until=NOW()+(${minutes}*INTERVAL '1 minute'),updated_at=NOW()
       WHERE user_id=${userId}`;
 
+    return json({ok:true});
+  }
+
+  // L'admin demande à l'assistant de répondre à n'importe quel message du chat.
+  if(action==='assistant_reply'){
+    if(!assistantConfigured())return fail('Assistant non configuré : ajoute ANTHROPIC_API_KEY dans Vercel.',409);
+    const messageId=String(body.messageId||'');
+    const rows=await sql`SELECT room_id FROM ex237_chat_messages WHERE id=${messageId} LIMIT 1`;
+    const message:any=rows[0];
+    if(!message)return fail('Message introuvable.',404);
+    scheduleAssistant(String(message.room_id),messageId,null,'admin');
     return json({ok:true});
   }
 

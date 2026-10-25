@@ -1,11 +1,17 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import HomeView from './home-view';
 import SubjectsView from './subjects-view';
 import ChatView from './chat-view';
 import ProfileView from './profile-view';
-import AdminView from './admin-view';
+
+// Chargé seulement pour l'admin : les élèves ne téléchargent pas ce code.
+const AdminView = dynamic(() => import('./admin-view'), {
+  ssr: false,
+  loading: () => <div className="empty">Chargement de l’administration…</div>
+});
 
 export type Viewer = {
   role:'student'|'admin'; userId:string|null; email:string; displayName:string;
