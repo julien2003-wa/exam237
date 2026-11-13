@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#064b3a" />
+    <title>Exam237 · Hors ligne</title>
+    <link rel="icon" href="/icons/icon-192.png" />
+    <style>
+      :root {
+        --g9: #064b3a;
+        --g1: #dff3ea;
+        --gold: #f5c518;
+        --ink: #14211c;
+        --text: #3f5249;
+        --muted: #5b6c64;
+        --line: #dce7e1;
+        --bg: #f4f7f5;
+        --card: #fff;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --g1: #173c2d;
+          --ink: #edf5f1;
+          --text: #c8d6cf;
+          --muted: #9fb0a7;
+          --line: #27372f;
+          --bg: #0e1713;
+          --card: #142019;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+      }
+      header {
+        background: var(--g9);
+        color: #fff;
+        text-align: center;
+        padding: calc(28px + env(safe-area-inset-top)) 18px 56px;
+        border-radius: 0 0 28px 28px;
+      }
+      header img {
+        width: 84px;
+        height: 84px;
+        border-radius: 22px;
+        background: #fff;
+        padding: 6px;
+        object-fit: contain;
+      }
+      h1 {
+        margin: 12px 0 6px;
+        font-size: 1.4rem;
+      }
+      header p {
+        margin: 0 auto;
+        max-width: 340px;
+        color: #d6ebe2;
+        line-height: 1.45;
+      }
+      main {
+        width: calc(100% - 28px);
+        max-width: 480px;
+        margin: -34px auto 30px;
+        display: grid;
+        gap: 12px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 14px 16px;
+      }
+      .card h2 {
+        margin: 0 0 6px;
+        font-size: 1rem;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+        border-top: 1px solid var(--line);
+      }
+      .item:first-of-type {
+        border-top: 0;
+      }
+      .item div {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+      }
+      .item b {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .item small,
+      .empty {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      button {
+        font: inherit;
+        border: 0;
+        border-radius: 12px;
+        min-height: 40px;
+        padding: 8px 14px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .open {
+        background: var(--g1);
+        color: var(--g9);
+      }
+      .retry {
+        width: 100%;
+        min-height: 52px;
+        background: var(--gold);
+        color: #3d3200;
+        font-size: 1rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        .open {
+          color: #7fe0b8;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="/logo.png" alt="Exam237" />
+      <h1>Pas de connexion</h1>
+      <p>Vérifie tes données mobiles ou ton Wi-Fi. Tes sujets enregistrés restent lisibles ici.</p>
+    </header>
+    <main>
+      <section class="card">
+        <h2>Mes sujets sur ce téléphone</h2>
+        <div id="list"><p class="empty">Chargement…</p></div>
+      </section>
+      <button class="retry" type="button" id="retry">Réessayer la connexion</button>
+    </main>
+    <script>
+      (function () {
+        var CACHE = 'exam237-offline-v1';
+        var list = document.getElementById('list');
+        var items = [];
+        try {
+          items = JSON.parse(localStorage.getItem('exam237-offline-index') || '[]') || [];
+        } catch (e) {
+          items = [];
+        }
+        function size(bytes) {
+          if (bytes < 1048576) return Math.max(1, Math.round(bytes / 1024)) + ' Ko';
+          return (bytes / 1048576).toFixed(1).replace('.', ',') + ' Mo';
+        }
+        function open(item, button) {
+          if (!('caches' in window)) return;
+          button.disabled = true;
+          caches
+            .open(CACHE)
+            .then(function (cache) {
+              return cache.match(item.key);
+            })
+            .then(function (hit) {
+              if (!hit) throw new Error('absent');
+              return hit.blob();
+            })
+            .then(function (blob) {
+              var file = blob.type ? blob : new Blob([blob], { type: 'application/pdf' });
+              var url = URL.createObjectURL(file);
+              var link = document.createElement('a');
+              link.href = url;
+              if (/android/i.test(navigator.userAgent)) {
+                link.download = (String(item.title || 'exam237').replace(/[^\w.-]+/g, '-') || 'exam237') + '.pdf';
+              } else link.target = '_blank';
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              setTimeout(function () {
+                URL.revokeObjectURL(url);
+              }, 120000);
+            })
+            .catch(function () {
+              button.textContent = 'Introuvable';
+            })
+            .then(function () {
+              button.disabled = false;
+            });
+        }
+        list.textContent = '';
+        if (!items.length || !('caches' in window)) {
+          var p = document.createElement('p');
+          p.className = 'empty';
+          p.textContent =
+            'Aucun sujet enregistré. Avec Exam237 Premium, touche « Lire sans connexion » dans un sujet pour le garder sur ton téléphone.';
+          list.appendChild(p);
+        }
+        items.forEach(function (item) {
+          var row = document.createElement('div');
+          row.className = 'item';
+          var text = document.createElement('div');
+          var title = document.createElement('b');
+          title.textContent = item.title || 'Sujet';
+          var sub = document.createElement('small');
+          sub.textContent = (item.subtitle || '') + (item.size ? ' · ' + size(item.size) : '');
+          text.appendChild(title);
+          text.appendChild(sub);
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'open';
+          button.textContent = 'Ouvrir';
+          button.addEventListener('click', function () {
+            open(item, button);
+          });
+          row.appendChild(text);
+          row.appendChild(button);
+          list.appendChild(row);
+        });
+        function back() {
+          window.location.replace('/');
+        }
+        document.getElementById('retry').addEventListener('click', back);
+        window.addEventListener('online', back);
+      })();
+    </script>
+  </body>
+</html>

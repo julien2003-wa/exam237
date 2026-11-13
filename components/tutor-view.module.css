@@ -1,0 +1,233 @@
+/* Prof IA privé : reprend le style du chat, avec quelques éléments en plus. */
+
+.notice {
+  align-self: center;
+  max-width: 420px;
+  margin: 6px auto 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--gold-bg);
+  border: 1px solid var(--gold-line);
+  color: var(--gold-text);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.welcome {
+  margin: auto;
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  gap: 10px;
+  padding: 18px 16px;
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--text);
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(11, 20, 16, 0.08);
+}
+.welcome b {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+.welcome p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.bigIcon {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto;
+  border-radius: 29px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.starters {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.starter {
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  text-align: left;
+}
+.starter svg {
+  color: var(--g8);
+  flex-shrink: 0;
+}
+
+.followUps {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 10px 6px;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.followUps::-webkit-scrollbar {
+  display: none;
+}
+.followUp {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--gold-line);
+  background: var(--gold-bg);
+  color: var(--gold-text);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.attach {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 10px;
+  padding: 8px 8px 8px 10px;
+  border-radius: 14px 14px 0 0;
+  background: var(--card);
+  border-left: 3px solid var(--gold);
+}
+.attach img {
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.attach div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.attach b {
+  font-size: 0.82rem;
+}
+.attach span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.photo {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin: 2px 0 6px;
+}
+.photoTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(6, 75, 58, 0.1);
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--g8);
+}
+@media (prefers-color-scheme: dark) {
+  .photoTag {
+    background: rgba(255, 255, 255, 0.08);
+    color: #7fe0b8;
+  }
+}
+.retry {
+  border: 0;
+  background: transparent;
+  color: var(--red);
+  font-weight: 800;
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  align-self: flex-end;
+}
+
+.locked {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  background: var(--bg);
+}
+.lockedCard {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 22px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.lockedCard h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+}
+.lockedCard p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+.sample {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--wall, #e9efe9);
+  text-align: left;
+}
+.sampleMine,
+.sampleAi {
+  max-width: 86%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.sampleMine {
+  justify-self: end;
+  background: #d6f3e2;
+}
+.sampleAi {
+  justify-self: start;
+  background: #fff8d6;
+}
+@media (prefers-color-scheme: dark) {
+  .sample {
+    background: #0c1511;
+  }
+  .sampleMine {
+    background: #17402f;
+  }
+  .sampleAi {
+    background: #2b2610;
+  }
+}

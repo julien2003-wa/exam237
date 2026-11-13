@@ -14,13 +14,18 @@ export type Viewer = {
   classLabel: string | null;
   groupId: string | null;
   groupLabel: string | null;
-  accountStatus: 'pending' | 'active' | 'expired' | 'suspended' | 'admin';
+  examType: string | null;
+  // Le compte est actif dès l'inscription (version gratuite) ; « premium » indique
+  // si l'élève a un Premium en cours (activé par l'admin jusqu'à premiumUntil).
+  accountStatus: 'active' | 'suspended' | 'admin';
+  premium: boolean;
   premiumUntil: string | null;
-  online?: boolean;
 };
 
 export function normalizeEmail(value: unknown) {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 export function validEmail(email: string) {
@@ -55,14 +60,20 @@ export function safeEqual(a: string, b: string) {
   return A.length === B.length && crypto.timingSafeEqual(A, B);
 }
 
-function effectiveStatus(raw: string | null, premiumUntil: string | null, disabledAt?: string | null): Viewer['accountStatus'] {
-  if (disabledAt || raw === 'suspended') return 'suspended';
-  if (raw === 'pending') return 'pending';
-  if (!premiumUntil || new Date(premiumUntil).getTime() <= Date.now()) return 'expired';
-  return 'active';
+export function hasPremium(premiumUntil: string | null | undefined) {
+  return !!premiumUntil && new Date(premiumUntil).getTime() > Date.now();
 }
 
-export async function createSession(response: NextResponse, role: 'user' | 'admin', userId: string | null, days = 30) {
+function effectiveStatus(raw: string | null, disabledAt?: string | null): 'active' | 'suspended' {
+  return disabledAt || raw === 'suspended' ? 'suspended' : 'active';
+}
+
+export async function createSession(
+  response: NextResponse,
+  role: 'user' | 'admin',
+  userId: string | null,
+  days = 30
+) {
   const sql = db();
   const raw = crypto.randomBytes(32).toString('base64url');
   await sql`
@@ -74,7 +85,7 @@ export async function createSession(response: NextResponse, role: 'user' | 'admi
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
-    maxAge: days * 86400
+    maxAge: days * 86400,
   });
 }
 
@@ -86,7 +97,7 @@ async function sessionFromToken(raw: string | undefined, expected: 'user' | 'adm
            u.email,u.premium_until,u.disabled_at,
            p.display_name,p.class_code,p.account_status,
            c.label AS class_label,c.group_id,
-           g.label AS group_label
+           g.label AS group_label,g.exam_type
     FROM jl_sessions s
     LEFT JOIN jl_users u ON u.id=s.user_id
     LEFT JOIN ex237_user_profiles p ON p.user_id=u.id
@@ -106,10 +117,18 @@ export async function getViewer(req: NextRequest): Promise<Viewer | null> {
   const admin = await sessionFromToken(req.cookies.get(ADMIN_COOKIE)?.value, 'admin');
   if (admin) {
     return {
-      role: 'admin', userId: null,
-      email: String(process.env.ADMIN_EMAIL || 'admin'), displayName: 'Administration',
-      classCode: null, classLabel: null, groupId: null, groupLabel: null,
-      accountStatus: 'admin', premiumUntil: null
+      role: 'admin',
+      userId: null,
+      email: String(process.env.ADMIN_EMAIL || 'admin'),
+      displayName: 'Administration',
+      classCode: null,
+      classLabel: null,
+      groupId: null,
+      groupLabel: null,
+      examType: null,
+      accountStatus: 'admin',
+      premium: true,
+      premiumUntil: null,
     };
   }
   const row = await sessionFromToken(req.cookies.get(USER_COOKIE)?.value, 'user');
@@ -123,13 +142,29 @@ export async function getViewer(req: NextRequest): Promise<Viewer | null> {
     classLabel: row.class_label || null,
     groupId: row.group_id || null,
     groupLabel: row.group_label || null,
-    accountStatus: effectiveStatus(row.account_status || 'pending', row.premium_until, row.disabled_at),
-    premiumUntil: row.premium_until || null
+    examType: row.exam_type || null,
+    accountStatus: effectiveStatus(row.account_status, row.disabled_at),
+    premium: hasPremium(row.premium_until),
+    premiumUntil: row.premium_until || null,
   };
 }
 
 export function isActiveStudent(viewer: Viewer | null): viewer is Viewer {
   return !!viewer && viewer.role === 'student' && viewer.accountStatus === 'active';
+}
+
+// Jeton de session brut de l'élève connecté (pour garder sa session après un changement
+// de mot de passe, par exemple).
+export function currentUserTokenHash(req: NextRequest) {
+  const raw = req.cookies.get(USER_COOKIE)?.value;
+  return raw ? sha256(raw) : null;
+}
+
+export function clientIp(req: NextRequest) {
+  const forwarded = req.headers.get('x-forwarded-for') || '';
+  return (forwarded.split(',')[0] || req.headers.get('x-real-ip') || 'inconnue')
+    .trim()
+    .slice(0, 64);
 }
 
 export async function destroySessions(req: NextRequest, response: NextResponse) {

@@ -1,138 +1,91 @@
-# Exam237 V5.1 — PWA
+# Exam237 V6 — Gratuit + Premium
 
-Cette version remplace l'ancienne interface HTML par une application unique **Next.js + TypeScript + React**, pensée d'abord pour le téléphone.
+Application **Next.js 15 + React 19 + TypeScript**, pensée d’abord pour le téléphone (installable comme une application), hébergée sur **Vercel** avec la base **Neon**.
 
-## Vision appliquée
+## Le modèle
 
-- Une seule application : pas de page « espace élève » séparée, ni de site admin différent.
-- Couleurs du logo Exam237 : vert, blanc, doré, rouge uniquement pour les alertes.
-- Navigation mobile : **Accueil · Sujets · Chat · Profil**. Le compte admin voit aussi **Admin**.
-- Inscription → compte **En attente** → activation directe par l'admin, sans clé.
-- Les classes et groupes viennent de Neon et sont créables depuis l'administration.
-- Une nouvelle classe apparaît automatiquement au formulaire d'inscription.
-- La création d'un groupe crée automatiquement son salon de chat.
-- Première C/D/TI et Terminale C/D/TI partagent chacun leurs contenus et leur chat de groupe.
-- Les sujets déjà présents dans Neon sont réutilisés : aucun PDF publié n'est copié ni supprimé par cette migration de code.
-- Suppression définitive d'un élève, d'un sujet ou d'une correction disponible depuis l'admin avec confirmation.
-- Chat chiffré avec **AES-256-GCM**, clé distincte dérivée par salon.
-- Temps réel via **Ably** ; si Ably n'est pas encore configuré, le chat bascule automatiquement sur une synchronisation toutes les 3,5 secondes.
-- PWA installable sur Android/iPhone compatibles. Les PDF protégés et le chat nécessitent Internet.
+- **Inscription gratuite, compte actif tout de suite.** Plus d’attente d’activation.
+- **Version gratuite** : le chat de la classe, **un sujet corrigé par matière** (celui que l’admin marque « Gratuit » ; sinon le sujet corrigé le plus récent de la matière est offert automatiquement), favoris et progression.
+- **Premium** : tous les sujets et corrections, vidéos, Prof IA privé (même avec une photo d’exercice), lecture sans connexion, mode examen avec correction, sans publicité partenaire.
+- **Passer Premium** : le bouton ouvre le WhatsApp d’Exam237 avec un message déjà rempli (nom, e-mail, classe, formule 1/3/6/12 mois et prix). L’élève paie par MTN MoMo ou Orange Money, hors du site. L’admin active le Premium dans **Admin → Élèves** (les jours s’ajoutent à ceux qui restent).
+- Le verrouillage est fait **côté serveur** : un compte gratuit ne reçoit même pas l’adresse des PDF Premium, et `/api/files` répond 402 s’il essaie quand même.
 
-## V5.1 — Administration complète et assistant IA
+## Ce que voit l’élève
 
-### Onglet Admin
+- **Accueil** : statuts vidéo (promos), formule en cours, compte à rebours de l’examen, « Reprendre », progression par matière, favoris, derniers sujets.
+- **Sujets** : recherche, filtres (favoris, à revoir, faits, gratuits), matières par couleur, années, badge « Nouveau ».
+- **Fiche d’un sujet** : sujet, corrections (avec le nom du relecteur), vidéo, mode examen chronométré, lecture sans connexion, favori / fait / à revoir, partage WhatsApp, « Signaler une erreur ».
+- **Chat de la classe** (style WhatsApp) : envoi instantané (le message s’affiche avant même la réponse du serveur), réponses citées, réactions, « … écrit », messages épinglés, appui long pour sélectionner, glisser pour répondre. Numéros de téléphone, e-mails et liens WhatsApp masqués, insultes filtrées.
+- **Prof IA** (Premium) : conversation privée, photo d’exercice réduite dans le téléphone avant l’envoi, indices d’abord puis solution si l’élève la demande.
+- **Profil** : nom, mot de passe, téléchargements hors ligne, installation de l’application, aide WhatsApp, suppression du compte.
+- Page publique **/bienvenue** (présentation, gratuit vs Premium), page hors ligne, pages d’erreur.
 
-- **Élèves** : filtres par statut (en attente en premier), durée d’activation au choix (1, 3, 6 ou 12 mois), date d’expiration visible, changement de classe, lien de réinitialisation du mot de passe (copiable ou envoyé par WhatsApp, valable 24 h), parole rendue dans le chat.
-- **Réactiver** un élève suspendu lui rend l’accès qui lui restait, **sans** rajouter de jours (l’ancien bouton « Activer 365 j » en rajoutait).
-- **Classes & groupes** : renommer, changer de groupe, désactiver (la classe disparaît de l’inscription) ou supprimer quand plus rien ne l’utilise. Un groupe vide se supprime avec son chat.
-- **Sujets & corrections** : modifier un sujet (classe, matière, année, session, titre) et **remplacer son PDF** sans le republier ; corrections rangées sous leur sujet, modifiables ; matières renommables et supprimables quand elles ne servent plus. Un sujet peut être publié avec sa correction en une fois.
-- **Gros PDF** : les PDF partent directement du navigateur vers Vercel Blob (fichiers privés), jusqu’à 50 Mo. L’ancienne voie passait par une fonction Vercel, limitée à 4,5 Mo.
-- **Signalements** : les élèves signalent un message depuis le chat (🚩). L’admin voit les messages signalés, les supprime, ignore le signalement, rend l’auteur muet 24 h ou le suspend.
-- Les suppressions effacent d’abord les lignes en base, puis les PDF : une erreur de stockage ne laisse plus de sujet cassé.
+## Administration (compte admin)
 
-### Assistant IA Exam237
+| Onglet               | Contenu                                                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tableau de bord      | Chiffres clés, Premium qui se terminent dans 7 jours (+1 mois en un geste), sujets les plus lus, configuration à faire, export CSV des élèves                                                                          |
+| Élèves               | Recherche, filtres (gratuits, Premium, finissent bientôt, suspendus), activer / prolonger / retirer le Premium, changer de classe, lien de nouveau mot de passe à envoyer par WhatsApp, suspendre, supprimer           |
+| Sujets & corrections | Publier un sujet (+ correction), durée de l’épreuve, sujet gratuit, relecteur, remplacer un PDF                                                                                                                        |
+| Vidéos promo         | Statuts de l’accueil : fichier vidéo (60 Mo max) ou lien YouTube, bouton (Premium, WhatsApp, lien), public, groupe, dates, ordre, vues et clics. Les vidéos **Partenaire** ne sont jamais montrées aux membres Premium |
+| Classes & groupes    | Groupes (avec leur chat), classes, type d’examen                                                                                                                                                                       |
+| Signalements         | Messages du chat signalés et erreurs signalées dans les sujets                                                                                                                                                         |
+| Assistant IA         | Mode du chat, questions par jour (Premium / gratuits), test, journal                                                                                                                                                   |
+| Réglages             | Numéro WhatsApp, prix des formules, dates des examens, mots interdits                                                                                                                                                  |
 
-- Dans le chat, un élève écrit **@assistant** suivi de sa question (ou touche 🎓). L’assistant répond dans le chat du groupe, comme un enseignant : rappel de cours, étapes numérotées, résultat. Répondre à un message de l’assistant permet de poser une question de suivi.
-- Mode **automatique** (au choix dans l’admin) : il répond aussi aux questions de cours posées sans mention et ignore les bavardages.
-- L’admin peut faire répondre l’assistant à n’importe quel message (appui sur le message → 🎓), régler la limite de questions par élève et par jour, tester l’assistant et voir les dernières questions, les erreurs et le coût estimé.
-- Les réponses sont marquées « IA · peut se tromper ». Les messages restent chiffrés : le journal de l’assistant ne stocke pas leur texte.
+Le numéro WhatsApp et les prix sont enregistrés **dans la base**, jamais dans le code (le dépôt est public).
 
-Variables Vercel à ajouter :
+## Variables Vercel
 
 ```text
-ANTHROPIC_API_KEY=sk-ant-...        # https://platform.claude.com/settings/keys
-ANTHROPIC_MODEL=claude-haiku-5-5    # facultatif (valeur par défaut)
-ASSISTANT_EFFORT=medium             # facultatif : low, medium ou high
-ANTHROPIC_WORKSPACE_ID=             # seulement si la clé n’est rattachée à aucun workspace
-```
-
-Sans `ANTHROPIC_API_KEY`, le site fonctionne normalement et l’assistant reste simplement invisible.
-
-**Base de données** : l’assistant crée lui-même, au premier usage, deux petites tables (`ex237_settings`, `ex237_assistant_requests`) avec `CREATE TABLE IF NOT EXISTS`. Aucune autre table n’est modifiée et aucune migration manuelle n’est nécessaire.
-
-Les élèves étant mineurs, Anthropic demande aux services qui les accueillent d’indiquer qu’ils parlent à une IA, de modérer et de surveiller les échanges, et de respecter les lois sur la protection des données des mineurs : voir [les recommandations d’Anthropic](https://support.claude.com/en/articles/9307344-responsible-use-of-anthropic-s-models-guidelines-for-organizations-serving-minors).
-
-## Base de données
-
-Cette V5 utilise directement la structure Neon déjà appliquée à Exam237 :
-
-- `ex237_groups`
-- `ex237_classes`
-- `ex237_user_profiles`
-- `ex237_subjects`
-- `ex237_class_subjects`
-- `ex237_papers`
-- `ex237_corrections`
-- `ex237_chat_rooms`
-- `ex237_chat_messages`
-- `ex237_chat_reports`
-- `ex237_password_reset_tokens`
-- `jl_users`
-- `jl_sessions`
-
-**Aucune nouvelle migration SQL n'est nécessaire pour cette archive.**
-
-## Variables Vercel requises
-
-Conserver les variables déjà présentes et ajouter :
-
-```text
-DATABASE_URL=...
+DATABASE_URL=...                 # Neon
 ADMIN_EMAIL=...
 ADMIN_PASSWORD=...
 APP_URL=https://exam237.vercel.app
-BLOB_READ_WRITE_TOKEN=...
-CHAT_MASTER_KEY=...
-ABLY_API_KEY=...
-RESEND_API_KEY=...
-RESET_EMAIL_FROM=Exam237 <noreply@votre-domaine.com>
+BLOB_READ_WRITE_TOKEN=...        # Vercel Blob (PDF et vidéos, en privé)
+CHAT_MASTER_KEY=...              # 32 caractères aléatoires minimum, ne jamais la changer
+ABLY_API_KEY=...                 # chat instantané (sinon mise à jour toutes les 4 s)
+ANTHROPIC_API_KEY=...            # Prof IA et assistant du chat (facultatif)
+ANTHROPIC_MODEL=                 # facultatif, claude-haiku-5-5 par défaut
+ASSISTANT_EFFORT=                # facultatif : low, medium ou high
+ANTHROPIC_WORKSPACE_ID=          # seulement si la clé n’est rattachée à aucun workspace
 ```
 
-### CHAT_MASTER_KEY
+`RESEND_API_KEY` et `RESET_EMAIL_FROM` ne servent plus : le mot de passe oublié passe par WhatsApp (l’admin crée le lien dans **Élèves → Plus…**).
 
-Utiliser une valeur aléatoire d'au moins 32 caractères. Une valeur de 48 à 64 caractères est préférable.
+**CHAT_MASTER_KEY** : ne jamais la mettre dans GitHub ni la changer après le lancement, sinon les anciens messages ne peuvent plus être déchiffrés.
 
-**Ne jamais la mettre dans GitHub et ne jamais la changer après le lancement du chat.** Si elle est remplacée, les anciens messages chiffrés ne pourront plus être déchiffrés.
+## Base de données
 
-### ABLY_API_KEY
+La V6 réutilise toutes les tables existantes et ajoute elle-même, au premier usage, ce qui lui manque (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) :
 
-Nécessaire pour le vrai temps réel : messages instantanés, présence et « écrit… ». Sans cette variable, le chat continue de fonctionner en mode de secours avec synchronisation périodique.
+- colonnes `ex237_corrections.reviewer_name` et `ex237_papers.duration_minutes` ;
+- tables `ex237_settings`, `ex237_user_papers`, `ex237_content_views`, `ex237_login_attempts`, `ex237_content_reports`, `ex237_tutor_messages`, `ex237_chat_reactions`, `ex237_premium_log`, `ex237_promos`, `ex237_promo_events`.
 
-### RESEND_API_KEY / RESET_EMAIL_FROM
+Rien n’est supprimé : l’ancienne version peut tourner sur la même base pendant les tests. Une seule fois, tous les sujets passent en Premium (`is_premium = TRUE`) ; l’admin choisit ensuite ses sujets gratuits.
 
-Nécessaires pour l'envoi du lien « Mot de passe oublié ». Le domaine utilisé dans `RESET_EMAIL_FROM` doit être autorisé par votre fournisseur d'e-mail.
+## Déploiement
 
-## Déploiement conseillé
+1. Travailler sur la branche `v6-premium` : Vercel crée un déploiement **Preview** sans toucher au site de production.
+2. Tester sur la Preview : inscription → compte gratuit → « Passer Premium » → activation dans l’admin → sujets débloqués → chat → Prof IA → vidéo promo.
+3. Une fois validé, fusionner `v6-premium` dans `main`.
 
-1. Conserver le dépôt GitHub actuel comme sauvegarde dans son historique.
-2. Créer de préférence une branche `exam237-v5-pwa` pour le premier test.
-3. Placer **le contenu de ce dossier à la racine du dépôt**.
-4. Ne pas remettre les anciennes routes `api/activation/redeem.js` et `api/admin/keys.js`.
-5. Ajouter les variables ci-dessus dans Vercel.
-6. Laisser Vercel créer un déploiement Preview.
-7. Tester : inscription → activation admin → contenus 3e → chat → création d'un nouveau groupe/classe → suppression d'un compte test.
-8. Une fois validé, fusionner vers la branche de production.
+## Sécurité
 
-## Stockage
-
-- **Neon** : comptes, classes, groupes, messages chiffrés et métadonnées.
-- **Vercel Blob** : sujets et corrections PDF.
-- **Ably** : transport temps réel uniquement. Le contenu des messages n'est pas envoyé en clair : l'événement temps réel sert à signaler qu'un nouveau message doit être relu depuis l'API Exam237.
-- Vidéos : conserver des liens vidéo externes plutôt que stocker de gros fichiers vidéo dans Blob.
+- Autorisations vérifiées côté serveur (classe, groupe, Premium, admin).
+- Cookies de session HTTP-only ; blocage après 5 mots de passe faux en 15 minutes ; limite d’inscriptions par réseau.
+- Messages du chat et du Prof IA chiffrés (AES-256-GCM) avant stockage. En temps réel, le texte des messages passe par Ably chiffré avec une clé propre au salon ; seules des informations techniques (réactions, « … écrit ») y passent en clair.
+- Ce n’est pas du chiffrement de bout en bout : le serveur d’Exam237 peut déchiffrer pour l’affichage et la modération (les élèves sont mineurs).
+- Les élèves étant mineurs, les réponses de l’IA sont signalées « IA · peut se tromper », modérées et visibles par l’admin. Voir [les recommandations d’Anthropic pour les services qui accueillent des mineurs](https://support.claude.com/en/articles/9307344-responsible-use-of-anthropic-s-models-guidelines-for-organizations-serving-minors).
 
 ## Routes serveur
 
-La V5 reste volontairement compacte pour limiter le nombre de fonctions Vercel :
+- `/api/auth` : connexion, inscription, déconnexion, nouveau mot de passe.
+- `/api/me` : espace de l’élève (progression, profil, mot de passe, suppression du compte, signalements, Prof IA).
+- `/api/data` : démarrage de l’application, données publiques, administration.
+- `/api/chat` : messages, réactions, épingles, modération, assistant, jeton temps réel.
+- `/api/files` : lecture protégée des PDF et vidéos, envoi direct vers Vercel Blob.
 
-- `/api/auth` : connexion, inscription, déconnexion, profil, mot de passe oublié.
-- `/api/data` : classes, groupes, sujets, élèves et opérations administrateur.
-- `/api/chat` : messages, modération, signalements, assistant IA et jeton temps réel.
-- `/api/files` : jeton d’envoi direct vers Vercel Blob, import et lecture protégée des PDF.
+## Hébergement
 
-## Sécurité importante
-
-- Les autorisations de classe sont contrôlées côté serveur, pas seulement dans l'interface.
-- Un élève ne peut pas ouvrir un PDF d'un autre groupe en modifiant l'URL.
-- Les cookies de session sont HTTP-only.
-- Les messages sont chiffrés avant stockage.
-- Comme l'administrateur doit pouvoir modérer tous les groupes, le chiffrement n'est pas du chiffrement de bout en bout au sens de WhatsApp : le serveur Exam237 autorisé peut déchiffrer pour l'affichage et la modération.
+Le plan Vercel **Hobby** est réservé à un usage non commercial. Dès que le Premium est vendu (ou que des publicités partenaires sont diffusées), passer au plan **Pro**.

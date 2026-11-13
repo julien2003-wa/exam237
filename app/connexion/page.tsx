@@ -1,25 +1,285 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
-export default function Connexion(){
-  const router=useRouter();
-  const [mode,setMode]=useState<'login'|'register'>('login');
-  const [classes,setClasses]=useState<any[]>([]);
-  const [message,setMessage]=useState<{text:string;type:'error'|'success'}|null>(null);
-  const [busy,setBusy]=useState(false);
-  useEffect(()=>{fetch('/api/data?action=public').then(r=>r.json()).then(d=>setClasses(d.classes||[])).catch(()=>{})},[]);
-  useEffect(()=>{fetch('/api/auth?action=me',{cache:'no-store'}).then(r=>{if(r.ok)router.replace('/')}).catch(()=>{})},[]);
-  const submit=async(e:React.FormEvent<HTMLFormElement>,action:'login'|'register')=>{
-    e.preventDefault();setBusy(true);setMessage(null);
-    const form=e.currentTarget;const body=Object.fromEntries(new FormData(form));
-    if(action==='register'&&body.password!==body.confirmPassword){setMessage({text:'Les mots de passe ne correspondent pas.',type:'error'});setBusy(false);return}
-    try{const r=await fetch(`/api/auth?action=${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur');router.replace('/')}catch(err:any){setMessage({text:err.message,type:'error'})}finally{setBusy(false)}
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Icon } from '@/components/icons';
+
+type PublicClass = {
+  code: string;
+  label: string;
+  groupId: string | null;
+  groupLabel: string | null;
+};
+
+function PasswordField({
+  name,
+  label,
+  autoComplete,
+  hint,
+}: {
+  name: string;
+  label: string;
+  autoComplete: string;
+  hint?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="field">
+      <label htmlFor={name}>{label}</label>
+      <div className="pwd">
+        <input
+          id={name}
+          className="input"
+          type={show ? 'text' : 'password'}
+          name={name}
+          required
+          minLength={autoComplete === 'new-password' ? 8 : undefined}
+          autoComplete={autoComplete}
+        />
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+          onClick={() => setShow(v => !v)}
+        >
+          <Icon name={show ? 'eyeOff' : 'eye'} size={20} />
+        </button>
+      </div>
+      {hint ? <small>{hint}</small> : null}
+    </div>
+  );
+}
+
+export default function Connexion() {
+  const router = useRouter();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [classes, setClasses] = useState<PublicClass[]>([]);
+  const [whatsapp, setWhatsapp] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'register' || window.location.hash === '#inscription')
+      setMode('register');
+    fetch('/api/auth?action=me', { cache: 'no-store' })
+      .then(r => {
+        if (r.ok) router.replace('/');
+      })
+      .catch(() => {});
+    fetch('/api/data?action=public', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        setClasses(d.classes || []);
+        setWhatsapp(d.site?.whatsapp || '');
+      })
+      .catch(() => {});
+  }, [router]);
+
+  // Les classes regroupées par niveau (3e, 1re, Tle…), comme dans le menu de l'admin.
+  const groups = useMemo(() => {
+    const map = new Map<string, { label: string; items: PublicClass[] }>();
+    for (const c of classes) {
+      const key = c.groupId || c.code;
+      if (!map.has(key)) map.set(key, { label: c.groupLabel || c.label, items: [] });
+      map.get(key)!.items.push(c);
+    }
+    return [...map.values()];
+  }, [classes]);
+
+  const switchMode = (next: 'login' | 'register') => {
+    setMode(next);
+    setError(null);
+    setForgotOpen(false);
   };
-  const forgot=async()=>{
-    const email=prompt('Entre ton adresse email :');if(!email)return;
-    try{const r=await fetch('/api/auth?action=request-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});const d=await r.json();setMessage({text:d.message||'Si le compte existe, un lien a été envoyé.',type:'success'})}catch{setMessage({text:'Impossible de traiter la demande.',type:'error'})}
+
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    const form = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
+    if (mode === 'register' && String(form.password || '').length < 8)
+      return setError('Le mot de passe doit contenir au moins 8 caractères.');
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/auth?action=${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Une erreur est survenue. Réessaie.');
+      router.replace('/');
+    } catch (err: any) {
+      setError(
+        err?.message === 'Failed to fetch'
+          ? 'Pas de connexion internet. Vérifie ton réseau et réessaie.'
+          : err.message
+      );
+      setBusy(false);
+    }
   };
-  return <main className="auth-page"><section className="auth-brand"><div className="auth-brand-inner"><img src="/logo.png" alt="Exam237"/><h1>Bienvenue sur Exam237</h1>
-<p>Connecte-toi ou crée ton compte pour accéder à tes sujets, tes corrections et aux discussions de ta classe.</p></div></section><section className="auth-panel"><div className="auth-card"><div className="auth-tabs"><button className={`auth-tab ${mode==='login'?'active':''}`} onClick={()=>setMode('login')}>Connexion</button><button className={`auth-tab ${mode==='register'?'active':''}`} onClick={()=>setMode('register')}>Créer un compte</button></div>{message?<div className={message.type==='error'?'auth-error':'auth-success'}>{message.text}</div>:null}{mode==='login'?<form className="stack" onSubmit={e=>submit(e,'login')}><div className="field"><label>Adresse email</label><input className="input" type="email" name="email" required autoComplete="email"/></div><div className="field"><label>Mot de passe</label><input className="input" type="password" name="password" required autoComplete="current-password"/></div><button className="btn btn-primary" disabled={busy}>{busy?'Connexion…':'Se connecter'}</button><button type="button" className="text-link" style={{border:0,background:'transparent'}} onClick={forgot}>Mot de passe oublié ?</button></form>:<form className="stack" onSubmit={e=>submit(e,'register')}><div className="field"><label>Nom et prénom</label><input className="input" name="displayName" required/></div><div className="field"><label>Adresse email</label><input className="input" type="email" name="email" required autoComplete="email"/></div><div className="field"><label>Classe</label><select className="select" name="classCode" required><option value="">Choisir ta classe</option>{classes.map(c=><option key={c.code} value={c.code}>{c.label}{c.groupLabel&&c.groupLabel!==c.label?` — ${c.groupLabel}`:''}</option>)}</select></div><div className="field"><label>Mot de passe</label><input className="input" type="password" name="password" minLength={10} required autoComplete="new-password"/><small>Au moins 10 caractères.</small></div><div className="field"><label>Confirmer le mot de passe</label><input className="input" type="password" name="confirmPassword" minLength={10} required autoComplete="new-password"/></div><button className="btn btn-primary" disabled={busy}>{busy?'Création…':'Créer mon compte'}</button></form>}<div className="auth-footer">Exam237 · Sujets • Corrections • Réussite</div></div></section></main>;
+
+  const forgotLink = whatsapp
+    ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(
+        `Bonjour Exam237, j’ai oublié mon mot de passe.\nMon adresse e-mail : ${email.trim() || '…'}`
+      )}`
+    : null;
+
+  return (
+    <main className="auth-wrap">
+      <div className="auth-top">
+        <img src="/logo.png" alt="Exam237" />
+        <h1>{mode === 'login' ? 'Bon retour sur Exam237' : 'Crée ton compte gratuit'}</h1>
+        <p>
+          {mode === 'login'
+            ? 'Retrouve tes sujets, tes corrections et le chat de ta classe.'
+            : 'Ton compte est actif tout de suite. Passe Premium quand tu veux.'}
+        </p>
+      </div>
+
+      <div className="auth-card">
+        <div className="seg" role="group" aria-label="Connexion ou inscription">
+          <button type="button" aria-pressed={mode === 'login'} onClick={() => switchMode('login')}>
+            Se connecter
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'register'}
+            onClick={() => switchMode('register')}
+          >
+            Créer un compte
+          </button>
+        </div>
+
+        {error ? (
+          <div className="alert error" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        <form className="stack" onSubmit={submit} key={mode}>
+          {mode === 'register' ? (
+            <div className="field">
+              <label htmlFor="displayName">Nom et prénom</label>
+              <input
+                id="displayName"
+                className="input"
+                name="displayName"
+                required
+                minLength={2}
+                maxLength={80}
+                autoComplete="name"
+              />
+            </div>
+          ) : null}
+          <div className="field">
+            <label htmlFor="email">Adresse e-mail</label>
+            <input
+              id="email"
+              className="input"
+              type="email"
+              name="email"
+              required
+              autoComplete="email"
+              inputMode="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+          </div>
+          {mode === 'register' ? (
+            <div className="field">
+              <label htmlFor="classCode">Ta classe</label>
+              <select id="classCode" className="select" name="classCode" required defaultValue="">
+                <option value="" disabled>
+                  {classes.length ? 'Choisis ta classe' : 'Chargement des classes…'}
+                </option>
+                {groups.map(g =>
+                  g.items.length > 1 ? (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.items.map(c => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : (
+                    <option key={g.items[0].code} value={g.items[0].code}>
+                      {g.items[0].label}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+          ) : null}
+          <PasswordField
+            name="password"
+            label="Mot de passe"
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            hint={mode === 'register' ? 'Au moins 8 caractères. Garde-le pour toi.' : undefined}
+          />
+          <button className="btn btn-primary btn-lg" disabled={busy}>
+            {busy ? (
+              <>
+                <span
+                  className="spinner"
+                  style={{ width: 18, height: 18, borderWidth: 2, borderTopColor: '#fff' }}
+                />
+                {mode === 'login' ? 'Connexion…' : 'Création du compte…'}
+              </>
+            ) : mode === 'login' ? (
+              'Se connecter'
+            ) : (
+              'Créer mon compte gratuit'
+            )}
+          </button>
+        </form>
+
+        {mode === 'login' ? (
+          forgotOpen ? (
+            <div className="alert ok" style={{ display: 'grid', gap: 10 }}>
+              <span>
+                Écris ton adresse e-mail ci-dessus, puis contacte Exam237 sur WhatsApp : tu recevras
+                un lien pour choisir un nouveau mot de passe.
+              </span>
+              {forgotLink ? (
+                <a
+                  className="btn btn-primary"
+                  href={forgotLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Icon name="phone" size={18} /> Écrire sur WhatsApp
+                </a>
+              ) : (
+                <span>Le numéro WhatsApp d’Exam237 sera bientôt disponible ici.</span>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="text-link"
+              style={{ justifySelf: 'center' }}
+              onClick={() => setForgotOpen(true)}
+            >
+              Mot de passe oublié ?
+            </button>
+          )
+        ) : (
+          <p className="fine">
+            Gratuit : le chat de ta classe et un sujet corrigé par matière pour essayer.
+          </p>
+        )}
+
+        <a
+          className="text-link"
+          href="/bienvenue"
+          style={{ justifySelf: 'center', fontSize: '0.9rem' }}
+        >
+          Découvrir Exam237
+        </a>
+      </div>
+    </main>
+  );
 }

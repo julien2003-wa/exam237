@@ -1,388 +1,371 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import HomeView from './home-view';
 import SubjectsView from './subjects-view';
 import ChatView from './chat-view';
 import ProfileView from './profile-view';
+import PremiumSheet from './premium-sheet';
+import PaperSheet from './paper-sheet';
+import StoryViewer from './story-viewer';
+import ExamMode from './exam-mode';
+import { Icon } from './icons';
+import { api, post, type Bootstrap, type Paper } from './lib';
 
-// Chargé seulement pour l'admin : les élèves ne téléchargent pas ce code.
+// Chargés seulement quand on en a besoin : les élèves ne téléchargent pas l'admin.
 const AdminView = dynamic(() => import('./admin-view'), {
   ssr: false,
-  loading: () => <div className="empty">Chargement de l’administration…</div>
+  loading: () => <div className="empty">Chargement de l’administration…</div>,
+});
+const TutorView = dynamic(() => import('./tutor-view'), {
+  ssr: false,
+  loading: () => <div className="empty">Chargement du Prof IA…</div>,
 });
 
-export type Viewer = {
-  role:'student'|'admin'; userId:string|null; email:string; displayName:string;
-  classCode:string|null; classLabel:string|null; groupId:string|null; groupLabel:string|null;
-  accountStatus:'pending'|'active'|'expired'|'suspended'|'admin'; premiumUntil:string|null;
+export type { Viewer } from './lib';
+
+type Tab = 'home' | 'subjects' | 'chat' | 'tutor' | 'admin' | 'profile';
+
+const TAB_ICONS: Record<Tab, string> = {
+  home: 'home',
+  subjects: 'book',
+  chat: 'chat',
+  tutor: 'sparkles',
+  admin: 'settings',
+  profile: 'user',
 };
 
-type Bootstrap = { viewer:Viewer; papers:any[]; subjects:any[]; rooms:any[]; latest?:any[] };
+export default function ExamApp() {
+  const router = useRouter();
+  const [data, setData] = useState<Bootstrap | null>(null);
+  const [tab, setTab] = useState<Tab>('home');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; type?: 'error' } | null>(null);
+  const [unread, setUnread] = useState(0);
+  const [premiumOpen, setPremiumOpen] = useState<{ renew?: boolean } | null>(null);
+  const [sheetPaperId, setSheetPaperId] = useState<string | null>(null);
+  const [storyIndex, setStoryIndex] = useState<number | null>(null);
+  const [examPaperId, setExamPaperId] = useState<string | null>(null);
+  const [subjectFocus, setSubjectFocus] = useState<string | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollByTab = useRef<Record<string, number>>({});
+  const toastTimer = useRef<number | null>(null);
 
-type Tab='home'|'subjects'|'chat'|'admin'|'profile';
+  const notify = useCallback((text: string, type?: 'error') => {
+    setToast({ text, type });
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 3600);
+  }, []);
 
-async function api(url:string,opts?:RequestInit,timeoutMs=15000){
-  const controller=new AbortController();
-  const timer=window.setTimeout(()=>controller.abort(),timeoutMs);
-
-  try{
-    const r=await fetch(url,{
-      ...opts,
-      cache:'no-store',
-      signal:controller.signal
-    });
-
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(d.error||'Une erreur est survenue.');
-    return d;
-  }catch(e:any){
-    if(e?.name==='AbortError'){
-      throw new Error('La connexion prend trop de temps. Réessaie.');
-    }
-    throw e;
-  }finally{
-    window.clearTimeout(timer);
-  }
-}
-
-function Icon({name}:{name:string}){
-  const icons:Record<string,string>={home:'⌂',subjects:'▤',chat:'◉',admin:'⚙',profile:'●'};
-  return <span className="nav-icon">{icons[name]}</span>;
-}
-
-export default function ExamApp(){
-  const router=useRouter();
-  const [data,setData]=useState<Bootstrap|null>(null);
-  const [tab,setTab]=useState<Tab>('home');
-  const [loading,setLoading]=useState(true);
-  const [loadError,setLoadError]=useState<string|null>(null);
-  const [toast,setToast]=useState<{text:string;type?:'error'}|null>(null);
-  const [unread,setUnread]=useState(0);
-
-  const contentRef=useRef<HTMLDivElement|null>(null);
-  const scrollByTab=useRef<Record<Tab,number>>({
-    home:0,
-    subjects:0,
-    chat:0,
-    admin:0,
-    profile:0
-  });
-
-  const notify=(text:string,type?:'error')=>{
-    setToast({text,type});
-    setTimeout(()=>setToast(null),3500);
-  };
-
-  const load=async()=>{
-    setLoading(true);
+  const load = useCallback(async () => {
     setLoadError(null);
-
-    try{
-      const d=await api('/api/data?action=bootstrap');
+    try {
+      const d = await api('/api/data?action=bootstrap');
       setData(d);
-    }catch(e:any){
-      const message=e?.message||'Impossible de charger Exam237.';
-
-      if(/Non connecté/i.test(message)){
-        router.replace('/connexion');
+    } catch (e: any) {
+      if (e?.status === 401) {
+        router.replace('/bienvenue');
         return;
       }
-
-      if(typeof navigator!=='undefined' && !navigator.onLine){
-        router.replace('/offline');
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        window.location.replace('/offline.html');
         return;
       }
-
-      setLoadError(message);
-      notify(message,'error');
-    }finally{
-      setLoading(false);
+      setLoadError(e?.message || 'Impossible de charger Exam237.');
     }
-  };
+  }, [router]);
 
-  useEffect(()=>{load()},[]);
+  useEffect(() => {
+    document.documentElement.classList.add('app-mode');
+    load();
+    return () => document.documentElement.classList.remove('app-mode');
+  }, [load]);
 
-  useEffect(()=>{
-    const retryWhenOnline=()=>{
-      if(!data) load();
+  useEffect(() => {
+    const retry = () => {
+      if (!data) load();
     };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [data, load]);
 
-    window.addEventListener('online',retryWhenOnline);
-    return()=>window.removeEventListener('online',retryWhenOnline);
-  },[data]);
+  const viewer = data?.viewer;
+  const isAdmin = viewer?.role === 'admin';
+  const hasChat = !!(data?.rooms && data.rooms.length);
 
-  const viewer=data?.viewer;
-
-  const tabs=useMemo(()=>{
-    if(!viewer)return [] as Array<{id:Tab;label:string}>;
-    if(viewer.role==='admin') return [
-      {id:'home' as Tab,label:'Accueil'},
-      {id:'subjects' as Tab,label:'Sujets'},
-      {id:'chat' as Tab,label:'Chats'},
-      {id:'admin' as Tab,label:'Admin'},
-      {id:'profile' as Tab,label:'Profil'}
+  const tabs = useMemo(() => {
+    if (!viewer) return [] as Array<{ id: Tab; label: string }>;
+    if (isAdmin)
+      return [
+        { id: 'admin' as Tab, label: 'Admin' },
+        { id: 'chat' as Tab, label: 'Chats' },
+        { id: 'profile' as Tab, label: 'Profil' },
+      ];
+    const list: Array<{ id: Tab; label: string }> = [
+      { id: 'home', label: 'Accueil' },
+      { id: 'subjects', label: 'Sujets' },
     ];
-    if(viewer.accountStatus!=='active') return [
-      {id:'home' as Tab,label:'Accueil'},
-      {id:'profile' as Tab,label:'Profil'}
-    ];
-    return [
-      {id:'home' as Tab,label:'Accueil'},
-      {id:'subjects' as Tab,label:'Sujets'},
-      {id:'chat' as Tab,label:'Chat'},
-      {id:'profile' as Tab,label:'Profil'}
-    ];
-  },[viewer]);
+    if (hasChat) list.push({ id: 'chat', label: 'Chat' });
+    if (data?.assistant?.tutor) list.push({ id: 'tutor', label: 'Prof IA' });
+    list.push({ id: 'profile', label: 'Profil' });
+    return list;
+  }, [viewer, isAdmin, hasChat, data?.assistant?.tutor]);
 
-  const switchTab=(next:Tab)=>{
-    if(next===tab)return;
-    const content=contentRef.current;
-    if(content) scrollByTab.current[tab]=content.scrollTop;
-    setTab(next);
-  };
+  // L'admin arrive directement sur son tableau de bord.
+  useEffect(() => {
+    if (tabs.length && !tabs.some(t => t.id === tab)) setTab(tabs[0].id);
+  }, [tabs, tab]);
 
-  useEffect(()=>{
-    if(tabs.length&&!tabs.some(x=>x.id===tab)){
-      const content=contentRef.current;
-      if(content) scrollByTab.current[tab]=content.scrollTop;
-      setTab('home');
-    }
-  },[tabs,tab]);
-
-  useEffect(()=>{
-    const content=contentRef.current;
-    if(!content)return;
-
-    const id=requestAnimationFrame(()=>{
-      content.scrollTop=scrollByTab.current[tab]||0;
+  const switchTab = useCallback((next: Tab) => {
+    setTab(current => {
+      if (current === next) return current;
+      if (mainRef.current) scrollByTab.current[current] = mainRef.current.scrollTop;
+      return next;
     });
+  }, []);
 
-    return ()=>cancelAnimationFrame(id);
-  },[tab]);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      el.scrollTop = scrollByTab.current[tab] || 0;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [tab]);
 
-  const logout=async()=>{
-    try{
-      await api('/api/auth?action=logout',{method:'POST'});
-    }finally{
-      router.replace('/connexion');
+  // Bouton « retour » du téléphone : revient à l'accueil au lieu de quitter l'appli.
+  useEffect(() => {
+    if (!viewer || isAdmin) return;
+    if (tab !== 'home') {
+      window.history.pushState({ exam237: tab }, '');
+      const onPop = () => setTab('home');
+      window.addEventListener('popstate', onPop);
+      return () => window.removeEventListener('popstate', onPop);
+    }
+  }, [tab, viewer, isAdmin]);
+
+  const updatePaper = useCallback((id: string, patch: Partial<Paper>) => {
+    setData(current =>
+      current
+        ? { ...current, papers: current.papers.map(p => (p.id === id ? { ...p, ...patch } : p)) }
+        : current
+    );
+  }, []);
+
+  const setPaperState = useCallback(
+    async (paper: Paper, patch: { favorite?: boolean; status?: 'done' | 'review' | null }) => {
+      const before = { favorite: paper.favorite, status: paper.status };
+      updatePaper(paper.id, patch as Partial<Paper>);
+      try {
+        await post('/api/me', { action: 'paper_state', paperId: paper.id, ...patch });
+      } catch (e: any) {
+        updatePaper(paper.id, before);
+        notify(e.message, 'error');
+      }
+    },
+    [notify, updatePaper]
+  );
+
+  const logout = async () => {
+    try {
+      await post('/api/auth?action=logout', {});
+    } finally {
+      router.replace('/bienvenue');
     }
   };
 
-  if(loading){
+  if (!data || !viewer) {
     return (
-      <main className="center-screen">
-        <div className="offline-card">
-          <img src="/logo.png" alt="Exam237"/>
-          <p>Chargement d’Exam237…</p>
+      <main className="splash">
+        <div>
+          <img src="/logo.png" alt="Exam237" />
+          {loadError ? (
+            <div className="stack" style={{ justifyItems: 'center' }}>
+              <p>{loadError}</p>
+              <button className="btn btn-gold" onClick={load}>
+                Réessayer
+              </button>
+            </div>
+          ) : (
+            <p>Chargement…</p>
+          )}
         </div>
       </main>
     );
   }
 
-  if(!data||!viewer){
-    return (
-      <main className="center-screen">
-        <div className="offline-card">
-          <img src="/logo.png" alt="Exam237"/>
-          <h2>Exam237 n’a pas pu charger</h2>
-          <p>{loadError||'Une erreur de connexion est survenue.'}</p>
-          <div className="stack">
-            <button className="btn btn-primary" onClick={load}>
-              Réessayer
-            </button>
-            <button
-              className="btn btn-light"
-              onClick={()=>router.replace('/connexion')}
-            >
-              Aller à la connexion
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  const isPending=viewer.role==='student'&&viewer.accountStatus!=='active';
-  const statusLabel=
-    viewer.role==='admin'
-      ?'Administrateur'
-      :viewer.accountStatus==='active'
-        ?'Compte actif'
-        :viewer.accountStatus==='pending'
-          ?'En attente'
-          :viewer.accountStatus==='expired'
-            ?'Accès expiré'
-            :'Suspendu';
+  const sheetPaper = sheetPaperId ? data.papers.find(p => p.id === sheetPaperId) || null : null;
+  const examPaper = examPaperId ? data.papers.find(p => p.id === examPaperId) || null : null;
+  const immersive = tab === 'chat' || tab === 'tutor';
+  const openPaper = (paper: Paper) => setSheetPaperId(paper.id);
+  const openPremium = (renew = false) => setPremiumOpen({ renew });
 
   return (
-    <div className="app-shell">
-      <aside className="side-nav">
-        <div className="brand">
-          <img src="/logo.png" alt="Exam237"/>
-          <div>
-            EXAM237
-            <small>{viewer.groupLabel||'Administration'}</small>
+    <div className="app" data-immersive={immersive ? 'true' : 'false'}>
+      <main ref={mainRef} className={`app-main ${immersive ? 'immersive' : ''}`}>
+        {data.warning && tab === 'home' ? (
+          <div className="page" style={{ paddingBottom: 0 }}>
+            <div className="banner">{data.warning}</div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="side-links">
-          {tabs.map(x=>(
-            <button
-              key={x.id}
-              onClick={()=>switchTab(x.id)}
-              className={`nav-btn ${tab===x.id?'active':''}`}
-            >
-              <Icon name={x.id}/>
-              <span>{x.label}</span>
-              {x.id==='chat'&&unread>0
-                ?<span className="badge">{unread>99?'99+':unread}</span>
-                :null}
-            </button>
-          ))}
-        </div>
+        {tab === 'home' && !isAdmin ? (
+          <HomeView
+            data={data}
+            unread={unread}
+            onOpenPaper={openPaper}
+            onOpenStory={setStoryIndex}
+            onPremium={openPremium}
+            onOpenSubjects={subjectId => {
+              setSubjectFocus(subjectId || null);
+              switchTab('subjects');
+            }}
+            onOpenProfile={() => switchTab('profile')}
+          />
+        ) : null}
 
-        <div className="side-bottom">
-          <div className="user-chip">
-            <b>{viewer.displayName||viewer.email}</b>
-            <small>{statusLabel}</small>
+        {tab === 'subjects' ? (
+          <SubjectsView
+            papers={data.papers}
+            focusSubject={subjectFocus}
+            onFocusSubject={setSubjectFocus}
+            onOpenPaper={openPaper}
+            onPremium={() => openPremium()}
+            premium={viewer.premium}
+          />
+        ) : null}
+
+        {/* Le chat reste chargé en arrière-plan : messages instantanés et compteur à jour. */}
+        {hasChat ? (
+          <div style={{ display: tab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
+            <ChatView
+              viewer={viewer}
+              rooms={data.rooms}
+              active={tab === 'chat'}
+              assistantEnabled={data.assistant.chat}
+              notify={notify}
+              onUnread={setUnread}
+              onBack={() => switchTab(isAdmin ? 'admin' : 'home')}
+              onPremium={() => openPremium()}
+            />
           </div>
-        </div>
-      </aside>
+        ) : null}
 
-      <main className="main">
-        <header className="topbar">
-          <h1>{tab==='home'?'Exam237':tabs.find(x=>x.id===tab)?.label}</h1>
-          <div className="topbar-right">
-            {viewer.groupLabel
-              ?<span className="group-pill">{viewer.groupLabel}</span>
-              :null}
-            <span className={`status-pill ${viewer.accountStatus}`}>
-              {statusLabel}
-            </span>
+        {tab === 'tutor' ? (
+          <TutorView
+            viewer={viewer}
+            notify={notify}
+            onBack={() => switchTab('home')}
+            onPremium={() => openPremium()}
+          />
+        ) : null}
+
+        {tab === 'admin' && isAdmin ? (
+          <div className="page" style={{ maxWidth: 1180 }}>
+            <AdminView notify={notify} />
           </div>
-        </header>
+        ) : null}
 
-        <div
-          ref={contentRef}
-          className="content"
-          data-tab={tab}
-        >
-          {isPending&&tab==='home'
-            ?<Pending viewer={viewer}/>
-            :null}
-
-          {!isPending&&tab==='home'
-            ?<HomeView
-                viewer={viewer}
-                latest={data.latest||data.papers?.slice(0,6)||[]}
-                paperCount={data.papers?.length||0}
-                onOpenSubjects={()=>switchTab('subjects')}
-                onOpenChat={()=>switchTab('chat')}
-              />
-            :null}
-
-          {tab==='subjects'
-            ?<SubjectsView
-                viewer={viewer}
-                papers={data.papers||[]}
-                onRefresh={load}
-                notify={notify}
-              />
-            :null}
-
-          {tab==='chat'
-            ?<ChatView
-                viewer={viewer}
-                rooms={data.rooms||[]}
-                notify={notify}
-                onUnread={setUnread}
-              />
-            :null}
-
-          {tab==='admin'&&viewer.role==='admin'
-            ?<AdminView notify={notify}/>
-            :null}
-
-          {tab==='profile'
-            ?<ProfileView
-                viewer={viewer}
-                onLogout={logout}
-                onRefresh={load}
-                notify={notify}
-              />
-            :null}
-        </div>
+        {tab === 'profile' ? (
+          <ProfileView
+            viewer={viewer}
+            site={data.site}
+            onLogout={logout}
+            onRefresh={load}
+            onPremium={openPremium}
+            notify={notify}
+          />
+        ) : null}
       </main>
 
-      <nav className="mobile-nav">
-        {tabs.map(x=>(
+      <nav
+        className="app-nav"
+        aria-label="Navigation principale"
+        style={{ ['--tabs' as any]: tabs.length }}
+      >
+        <div className="nav-brand">
+          <img src="/logo.png" alt="" />
+          <span>EXAM237</span>
+        </div>
+        {tabs.map(t => (
           <button
-            key={x.id}
-            className={tab===x.id?'active':''}
-            onClick={()=>switchTab(x.id)}
+            key={t.id}
+            type="button"
+            aria-current={tab === t.id ? 'page' : undefined}
+            onClick={() => switchTab(t.id)}
           >
-            <span>
-              {x.id==='home'
-                ?'⌂'
-                :x.id==='subjects'
-                  ?'▤'
-                  :x.id==='chat'
-                    ?'◉'
-                    :x.id==='admin'
-                      ?'⚙'
-                      :'●'}
+            <span className="nav-pill">
+              <Icon name={TAB_ICONS[t.id]} size={22} />
             </span>
-            <span>{x.label}</span>
-            {x.id==='chat'&&unread>0
-              ?<span className="badge">{unread>99?'99+':unread}</span>
-              :null}
+            {t.label}
+            {t.id === 'chat' && unread > 0 && tab !== 'chat' ? (
+              <span className="nav-badge">{unread > 99 ? '99+' : unread}</span>
+            ) : null}
           </button>
         ))}
       </nav>
 
-      {toast
-        ?<div className={`toast ${toast.type==='error'?'error':''}`}>
-            {toast.text}
-          </div>
-        :null}
+      {sheetPaper ? (
+        <PaperSheet
+          paper={sheetPaper}
+          viewer={viewer}
+          onClose={() => setSheetPaperId(null)}
+          onPremium={() => {
+            setSheetPaperId(null);
+            openPremium();
+          }}
+          onState={patch => setPaperState(sheetPaper, patch)}
+          onExam={() => {
+            setSheetPaperId(null);
+            setExamPaperId(sheetPaper.id);
+          }}
+          notify={notify}
+        />
+      ) : null}
+
+      {examPaper ? (
+        <ExamMode
+          paper={examPaper}
+          onClose={() => setExamPaperId(null)}
+          onDone={() => {
+            if (examPaper.status !== 'done') setPaperState(examPaper, { status: 'done' });
+          }}
+          onOpenSheet={() => {
+            setExamPaperId(null);
+            setSheetPaperId(examPaper.id);
+          }}
+        />
+      ) : null}
+
+      {storyIndex !== null && data.promos[storyIndex] ? (
+        <StoryViewer
+          promos={data.promos}
+          start={storyIndex}
+          site={data.site}
+          viewer={viewer}
+          onClose={() => setStoryIndex(null)}
+          onPremium={() => {
+            setStoryIndex(null);
+            openPremium();
+          }}
+        />
+      ) : null}
+
+      {premiumOpen ? (
+        <PremiumSheet
+          viewer={viewer}
+          site={data.site}
+          renew={!!premiumOpen.renew}
+          onClose={() => setPremiumOpen(null)}
+        />
+      ) : null}
+
+      {toast ? (
+        <div className={`toast ${toast.type === 'error' ? 'error' : ''}`} role="status">
+          {toast.text}
+        </div>
+      ) : null}
     </div>
-  );
-}
-
-function Pending({viewer}:{viewer:Viewer}){
-  const text=
-    viewer.accountStatus==='pending'
-      ?'Ton compte a bien été créé. Il doit maintenant être activé par Exam237.'
-      :viewer.accountStatus==='expired'
-        ?'Ton accès a expiré. Contacte Exam237 pour le renouveler.'
-        :'Ton compte est temporairement suspendu.';
-
-  return (
-    <section className="pending-screen">
-      <img src="/logo.png" alt="Exam237"/>
-      <div className="pending-icon">
-        {viewer.accountStatus==='pending'
-          ?'⌛'
-          :viewer.accountStatus==='expired'
-            ?'⏱'
-            :'!'}
-      </div>
-      <h2>
-        {viewer.accountStatus==='pending'
-          ?'Compte en attente'
-          :viewer.accountStatus==='expired'
-            ?'Accès expiré'
-            :'Compte suspendu'}
-      </h2>
-      <p>{text}</p>
-      {viewer.classLabel
-        ?<p>
-            <b>Classe :</b> {viewer.classLabel}<br/>
-            <b>Groupe :</b> {viewer.groupLabel}
-          </p>
-        :null}
-    </section>
   );
 }
