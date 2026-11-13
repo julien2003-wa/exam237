@@ -1,14 +1,7 @@
 import type { Metadata } from 'next';
 import ExamApp from '@/components/exam-app';
 import { db, isUuid } from '@/lib/db';
-
-const EXAMS: Record<string, string> = {
-  BEPC: 'BEPC',
-  PROBATOIRE: 'Probatoire',
-  BAC: 'Bac',
-  CAP: 'CAP',
-  GCE: 'GCE',
-};
+import { examName } from '@/lib/exams';
 
 type Props = { params: Promise<{ rest?: string[] }> };
 
@@ -29,7 +22,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       WHERE p.id=${id} AND p.status='published' LIMIT 1`;
     const p = rows[0];
     if (!p) return fallback;
-    const exam = EXAMS[String(p.exam_type || '').toUpperCase()] || '';
+    const exam = examName(p.exam_type) || '';
     const title = [p.subject, [exam, p.exam_year].filter(Boolean).join(' ')]
       .filter(Boolean)
       .join(', ');

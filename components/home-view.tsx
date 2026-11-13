@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { Icon } from './icons';
+import { daysBefore, examTargetFor } from '@/lib/exams';
 import {
   daysLeft,
-  daysUntil,
   frDate,
   readLocal,
   subjectColor,
@@ -66,14 +66,10 @@ export default function HomeView({
   );
   const favorites = papers.filter(p => p.favorite).slice(0, 4);
   const resumePaper = resume ? papers.find(p => p.id === resume.paperId) : null;
-  const examDays = daysUntil(site.examDate);
+  // La date de l'examen (Réglages) ou, en attendant, le début officiel de la période d'examens.
+  const exam = examTargetFor(site.examDate, viewer.examType);
+  const examDays = exam ? daysBefore(exam.date) : null;
   const premiumDays = daysLeft(viewer.premiumUntil);
-  const examLabel =
-    viewer.examType === 'BACCALAUREAT'
-      ? 'Bac'
-      : viewer.examType === 'PROBATOIRE'
-        ? 'Probatoire'
-        : viewer.examType || 'Examen';
 
   return (
     <>
@@ -160,14 +156,18 @@ export default function HomeView({
         )}
 
         <div className="duo">
-          {examDays !== null && examDays >= 0 ? (
-            <section className="count-card" aria-label={`${examLabel} dans ${examDays} jours`}>
-              <span className="k">
-                {examLabel} {new Date(site.examDate!).getFullYear()}
-              </span>
+          {exam && examDays !== null ? (
+            <section className="count-card" aria-label={`${exam.title} dans ${examDays} jours`}>
+              <span className="k">{exam.title}</span>
               <span className="n">{examDays}</span>
               <span className="s">
-                {examDays === 1 ? 'jour pour réviser' : 'jours pour réviser'}
+                {exam.exact
+                  ? examDays === 1
+                    ? 'jour pour réviser'
+                    : 'jours pour réviser'
+                  : examDays === 1
+                    ? 'jour avant le début'
+                    : 'jours avant le début'}
               </span>
             </section>
           ) : (
