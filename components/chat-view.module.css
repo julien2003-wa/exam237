@@ -413,12 +413,6 @@
 .mine .meta {
   color: var(--mine-meta);
 }
-.aiNote {
-  margin-right: auto;
-  padding-right: 10px;
-  font-weight: 700;
-  color: var(--gold-text);
-}
 .failed {
   color: var(--red);
   font-weight: 800;

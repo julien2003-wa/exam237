@@ -24,7 +24,7 @@ function ReviewerField({ value, onChange }: { value: string; onChange: (v: strin
         onChange={e => onChange(e.target.value)}
         placeholder="Ex. M. Ndzi, professeur de mathématiques"
       />
-      <small>Affiché aux élèves sous la correction : ça rassure.</small>
+      <small>Affiché aux élèves sous la correction.</small>
     </div>
   );
 }
@@ -647,7 +647,7 @@ function PaperCard({
         <span className="mini-pill">{paper.class_label}</span>
         <span className="mini-pill">{paper.session_label}</span>
         {paper.duration_minutes ? (
-          <span className="mini-pill">⏱ {paper.duration_minutes} min</span>
+          <span className="mini-pill">{paper.duration_minutes} min</span>
         ) : null}
         <span className="mini-pill">Ajouté le {formatDate(paper.created_at)}</span>
       </div>
@@ -1025,7 +1025,7 @@ function CorrectionRow({ correction, act, notify }: { correction: any; act: Act;
               target="_blank"
               rel="noopener noreferrer"
             >
-              ▶ Vidéo
+              Vidéo
             </a>
           ) : null}
           <button className="btn btn-light btn-sm" onClick={() => setEditing(true)}>

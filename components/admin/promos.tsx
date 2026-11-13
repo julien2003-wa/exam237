@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Icon } from '../icons';
 import {
   Badge,
   formatDate,
@@ -95,9 +96,8 @@ export default function Promos({ data, act, notify }: { data: any; act: Act; not
   return (
     <div className="adm-stack">
       <p className="adm-note">
-        Ces vidéos s’affichent en <b>statuts</b> en haut de l’accueil, comme sur WhatsApp. Elles ne
-        se lancent que si l’élève les touche (pas de données consommées sans son accord). Les vidéos{' '}
-        <b>Partenaire</b> ne sont jamais montrées aux membres Premium.
+        Elles apparaissent en haut de l’accueil, comme les statuts WhatsApp, et ne se lancent que si
+        l’élève les touche. Les vidéos <b>Partenaire</b> ne sont pas montrées aux membres Premium.
       </p>
       <PromoForm groups={groups} act={act} notify={notify} />
       <Section title="Vidéos" count={`${live} en ligne / ${promos.length}`}>
@@ -562,7 +562,7 @@ function PromoCard({
             aria-label="Monter"
             onClick={() => run({ action: 'move_promo', id: promo.id, direction: 'up' }, '')}
           >
-            ↑
+            <Icon name="up" size={16} />
           </button>
           <button
             className="btn btn-light btn-sm"
@@ -570,10 +570,10 @@ function PromoCard({
             aria-label="Descendre"
             onClick={() => run({ action: 'move_promo', id: promo.id, direction: 'down' }, '')}
           >
-            ↓
+            <Icon name="down" size={16} />
           </button>
           <button className="btn btn-light btn-sm" onClick={() => setPreview(v => !v)}>
-            {preview ? 'Masquer' : '▶ Aperçu'}
+            {preview ? 'Masquer' : 'Aperçu'}
           </button>
           <button className="btn btn-light btn-sm" onClick={() => setEditing(true)}>
             Modifier

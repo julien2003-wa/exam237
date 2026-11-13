@@ -4,12 +4,12 @@ import { Icon } from './icons';
 import { PLANS, premiumMessage, whatsappUrl, type Site, type Viewer } from './lib';
 
 const BENEFITS = [
-  'Tous les sujets et corrigés expliqués',
-  'Les vidéos d’explication',
-  'Prof IA en privé, même avec la photo de l’exercice',
-  'Lecture sans connexion',
-  'Mode examen avec correction',
-  'Sans pubs des partenaires',
+  'Tous les sujets avec leurs corrections',
+  'Les vidéos de correction',
+  'Le Prof IA, même avec la photo d’un exercice',
+  'La lecture sans connexion',
+  'Le mode examen chronométré',
+  'Aucune publicité',
 ];
 
 export default function PremiumSheet({
@@ -54,7 +54,7 @@ export default function PremiumSheet({
             <Icon name="x" />
           </button>
         </div>
-        <p className="lead">Débloque tout Exam237 pour réussir ton examen.</p>
+        <p className="lead">Tout Exam237, sans limite, jusqu’à ton examen.</p>
 
         <section className="card benefits">
           {BENEFITS.map(b => (

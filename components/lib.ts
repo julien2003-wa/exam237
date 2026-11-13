@@ -126,10 +126,10 @@ export function premiumMessage(viewer: Viewer, planLabel: string, price: string,
     renew
       ? 'Bonjour Exam237, je veux renouveler mon Premium.'
       : 'Bonjour Exam237, je veux passer Premium.',
-    `Nom : ${viewer.displayName || '—'}`,
+    `Nom : ${viewer.displayName || 'non renseigné'}`,
     `E-mail : ${viewer.email}`,
-    `Classe : ${viewer.classLabel || '—'}${viewer.groupLabel && viewer.groupLabel !== viewer.classLabel ? ` (${viewer.groupLabel})` : ''}`,
-    `Formule : ${planLabel}${price ? ` — ${price}` : ''}`,
+    `Classe : ${viewer.classLabel || 'non renseignée'}${viewer.groupLabel && viewer.groupLabel !== viewer.classLabel ? ` (${viewer.groupLabel})` : ''}`,
+    `Formule : ${planLabel}${price ? ` (${price})` : ''}`,
   ].join('\n');
 }
 
@@ -182,9 +182,9 @@ export function daysLeft(value: string | null | undefined) {
 }
 
 export function frDate(value: string | null | undefined, long = true) {
-  if (!value) return '—';
+  if (!value) return '';
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString(
     'fr-FR',
     long ? { day: 'numeric', month: 'long', year: 'numeric' } : { day: '2-digit', month: 'short' }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Pane } from '../admin-view';
+import { Icon } from '../icons';
 import type { StudentFilter } from './students';
 import {
   Badge,
@@ -150,7 +151,7 @@ export default function Dashboard({
             {checks.map(c => (
               <div key={c.label} className={`adm-check ${c.ok ? 'ok' : ''}`}>
                 <span className="adm-check-mark" aria-hidden="true">
-                  {c.ok ? '✓' : '!'}
+                  {c.ok ? <Icon name="check" size={14} strokeWidth={3} /> : '!'}
                 </span>
                 <div>
                   <b>{c.label}</b>
@@ -218,10 +219,6 @@ export default function Dashboard({
             Aucun Premium ne se termine cette semaine.
           </p>
         )}
-        <p className="adm-note">
-          Quand un élève te paie, ouvre l’onglet <b>Élèves</b>, cherche son nom puis touche{' '}
-          <b>Activer Premium</b>.
-        </p>
       </Section>
 
       <Section title="Sujets les plus consultés (30 jours)" count={topPapers.length}>

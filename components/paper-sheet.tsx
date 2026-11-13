@@ -39,7 +39,7 @@ export default function PaperSheet({
   const [reportTarget, setReportTarget] = useState<string>('');
   const [sending, setSending] = useState(false);
   const color = subjectColor(paper.subjectName);
-  const title = `${paper.subjectName} · ${paper.year}`;
+  const title = `${paper.subjectName} ${paper.year}`;
 
   useEffect(() => {
     const urls = [paper.paperUrl, ...paper.corrections.map(c => c.pdfUrl)].filter(
@@ -75,7 +75,7 @@ export default function PaperSheet({
 
   const share = async () => {
     const link = `${window.location.origin}/bienvenue`;
-    const text = `Je révise « ${paper.subjectName} ${paper.year} » sur Exam237, avec des corrigés expliqués comme en classe. Rejoins-moi : ${link}`;
+    const text = `Je révise le sujet de ${paper.subjectName} ${paper.year} sur Exam237. Viens réviser avec moi : ${link}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: 'Exam237', text });
@@ -154,7 +154,7 @@ export default function PaperSheet({
                 <small style={{ color: 'inherit', opacity: 0.85 }}>
                   Sujet
                   {paper.corrections.length
-                    ? ` + ${paper.corrections.length} correction${paper.corrections.length > 1 ? 's' : ''} expliquée${paper.corrections.length > 1 ? 's' : ''}`
+                    ? ` + ${paper.corrections.length} correction${paper.corrections.length > 1 ? 's' : ''}`
                     : ''}
                   {paper.corrections.some(c => c.hasVideo) ? ' + vidéo' : ''}
                 </small>
@@ -180,7 +180,7 @@ export default function PaperSheet({
                     <span className="grow">
                       {c.title || 'Correction'}
                       <small>
-                        {c.reviewer ? `Relue par ${c.reviewer}` : 'Correction expliquée'}
+                        {c.reviewer ? `Relue par ${c.reviewer}` : 'Correction détaillée'}
                       </small>
                     </span>
                     <Icon name="chevron" />
@@ -226,7 +226,7 @@ export default function PaperSheet({
               >
                 <Icon name={viewer.premium ? 'download' : 'lock'} />
                 <span className="grow">
-                  {saved[paper.paperUrl] ? 'Sur ton téléphone ✓' : 'Lire sans connexion'}
+                  {saved[paper.paperUrl] ? 'Enregistré sur ton téléphone' : 'Lire sans connexion'}
                   <small>
                     {viewer.premium
                       ? saving

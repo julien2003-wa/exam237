@@ -768,3 +768,13 @@ button.adm-card:hover {
     color: var(--gold-text);
   }
 }
+
+.adm-online {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #16a34a;
+  vertical-align: 1px;
+}

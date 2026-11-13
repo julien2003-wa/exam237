@@ -260,7 +260,7 @@ export default function ProfileView({
   const helpUrl = site?.whatsapp
     ? whatsappUrl(
         site.whatsapp,
-        `Bonjour Exam237, j’ai besoin d’aide.\nNom : ${viewer.displayName || '—'}\nE-mail : ${viewer.email}\nClasse : ${viewer.classLabel || '—'}\n\nMon problème : `
+        `Bonjour Exam237, j’ai besoin d’aide.\nNom : ${viewer.displayName || 'non renseigné'}\nE-mail : ${viewer.email}\nClasse : ${viewer.classLabel || 'non renseignée'}\n\nMon problème : `
       )
     : null;
 
@@ -290,7 +290,7 @@ export default function ProfileView({
             <>
               <div className="row">
                 <span>Classe</span>
-                <b>{viewer.classLabel || '—'}</b>
+                <b>{viewer.classLabel || 'Non renseignée'}</b>
               </div>
               {viewer.groupLabel && viewer.groupLabel !== viewer.classLabel ? (
                 <div className="row">
@@ -419,7 +419,7 @@ export default function ProfileView({
                 Téléchargements hors ligne
                 {downloads.length ? (
                   <small style={{ display: 'block', color: 'var(--muted)', fontWeight: 500 }}>
-                    {downloads.length} fichier{downloads.length > 1 ? 's' : ''} ·{' '}
+                    {downloads.length} fichier{downloads.length > 1 ? 's' : ''},{' '}
                     {formatSize(totalSize)}
                   </small>
                 ) : null}
@@ -447,7 +447,7 @@ export default function ProfileView({
                       <div className="grow">
                         <b>{item.title}</b>
                         <small>
-                          {item.subtitle} · {formatSize(item.size)}
+                          {item.subtitle}, {formatSize(item.size)}
                         </small>
                       </div>
                       <button
@@ -562,8 +562,6 @@ export default function ProfileView({
           </details>
         </section>
       ) : null}
-
-      <p className="fine">Exam237 · Version 6</p>
     </div>
   );
 }

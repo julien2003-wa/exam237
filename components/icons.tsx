@@ -63,6 +63,7 @@ const PATHS: Record<string, React.ReactNode> = {
   back: <path d="M15 5l-7 7 7 7" />,
   chevron: <path d="M9 6l6 6-6 6" />,
   down: <path d="M6 9l6 6 6-6" />,
+  up: <path d="M6 15l6-6 6 6" />,
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

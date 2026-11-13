@@ -129,8 +129,7 @@ export default function Students({
       </div>
 
       <p className="adm-note">
-        Un élève t’a payé ? Cherche son nom ou son e-mail (il est dans son message WhatsApp),
-        choisis la durée puis touche <b>Activer Premium</b>. S’il est déjà Premium, les jours
+        Un élève t’a payé : cherche-le, choisis la durée et touche <b>Activer Premium</b>. Les jours
         s’ajoutent à ceux qui restent.
       </p>
 
@@ -222,7 +221,7 @@ function StudentCard({
       <div className="adm-item-head">
         <div className="adm-item-title">
           <b>
-            {user.online ? '🟢 ' : ''}
+            {user.online ? <span className="adm-online" title="En ligne" /> : null}
             {name}
           </b>
           <span className="adm-sub">
@@ -230,12 +229,17 @@ function StudentCard({
             {user.groupLabel && user.groupLabel !== user.classLabel ? ` · ${user.groupLabel}` : ''}
           </span>
         </div>
-        <Badge tone={plan.tone}>{plan.label}</Badge>
+        <div className="adm-badges">
+          {user.shared ? <Badge tone="grey">Compte partagé</Badge> : null}
+          <Badge tone={plan.tone}>{plan.label}</Badge>
+        </div>
       </div>
       <div className="adm-kv">
         <span>{access}</span>
         <span>{user.online ? 'En ligne' : `Vu ${timeAgo(user.lastSeenAt)}`}</span>
-        {user.mutedUntil ? <span>🔇 Muet jusqu’à {formatDate(user.mutedUntil, true)}</span> : null}
+        {user.mutedUntil ? (
+          <span>Muet dans le chat jusqu’à {formatDate(user.mutedUntil, true)}</span>
+        ) : null}
       </div>
 
       <div className="adm-actions">
@@ -286,7 +290,7 @@ function StudentCard({
                 {classes.map((c: any) => (
                   <option key={c.code} value={c.code}>
                     {c.label}
-                    {c.group_label ? ` — ${c.group_label}` : ''}
+                    {c.group_label ? ` (${c.group_label})` : ''}
                     {c.active ? '' : ' (désactivée)'}
                   </option>
                 ))}
@@ -357,7 +361,7 @@ function StudentCard({
                   )
                 }
               >
-                🔈 Rendre la parole dans le chat
+                Rendre la parole dans le chat
               </button>
             </div>
           ) : null}
@@ -401,12 +405,21 @@ function StudentCard({
             <button
               className="btn btn-danger btn-sm"
               disabled={busy}
-              onClick={() => {
-                if (confirm(`Supprimer définitivement ${name} ? Cette action est irréversible.`))
-                  run({ action: 'delete_user', id: user.id }, 'Élève supprimé définitivement.');
+              onClick={async () => {
+                const question = user.shared
+                  ? `Retirer ${name} d’Exam237 ? Ses messages, sa progression et son Premium seront effacés. Ce compte sert aussi en dehors d’Exam237 (JulienLab) : il n’est pas supprimé.`
+                  : `Supprimer définitivement ${name} ? Ses messages, sa progression et son Premium seront effacés.`;
+                if (!confirm(question)) return;
+                const r = await run({ action: 'delete_user', id: user.id }, '');
+                if (r)
+                  notify(
+                    r.deleted
+                      ? `${name} a été supprimé.`
+                      : `${name} a été retiré d’Exam237. Son compte est gardé pour l’autre application.`
+                  );
               }}
             >
-              Supprimer
+              {user.shared ? 'Retirer d’Exam237' : 'Supprimer'}
             </button>
           </div>
         </div>

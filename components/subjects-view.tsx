@@ -157,7 +157,7 @@ export default function SubjectsView({
                   <b>{s.name}</b>
                   <small>
                     {s.total} sujet{s.total > 1 ? 's' : ''}
-                    {s.done ? ` · ${s.done} fait${s.done > 1 ? 's' : ''}` : ''}
+                    {s.done ? `, ${s.done} fait${s.done > 1 ? 's' : ''}` : ''}
                   </small>
                   <span className="bar">
                     <span

@@ -7,7 +7,7 @@ import styles from './chat-view.module.css';
 
 /*
   Chat de la classe, en temps réel.
-  - Le message envoyé s'affiche tout de suite (🕓 puis ✓).
+  - Le message envoyé s’affiche tout de suite (horloge, puis coche).
   - Les messages des autres arrivent complets par Ably, scellés avec la clé du salon :
     pas besoin de recharger la discussion.
   - Sans Ably, ou après une coupure réseau, seule la suite manquante est récupérée.
@@ -933,7 +933,7 @@ export default function ChatView({
             <Icon name="pin" size={16} />
           </span>
           <span className={styles.pinText}>
-            <b>Message épinglé · {pinned.senderName}</b>
+            <b>Message épinglé</b>
             <span>{pinned.text}</span>
           </span>
         </button>
@@ -1045,6 +1045,7 @@ export default function ChatView({
                         {!m.senderUserId && !m.isAssistant ? (
                           <span className={styles.badge}>Admin</span>
                         ) : null}
+                        {m.isAssistant ? <span className={styles.badge}>IA</span> : null}
                       </span>
                     ) : null}
                     {m.replyText ? (
@@ -1057,12 +1058,9 @@ export default function ChatView({
                       <Linkified text={m.text} />
                     </span>
                     <span className={styles.meta}>
-                      {m.isAssistant ? (
-                        <span className={styles.aiNote}>IA · peut se tromper</span>
-                      ) : null}
                       {m.isPinned ? <Icon name="pin" size={11} /> : null}
                       {m.status === 'failed' ? (
-                        <span className={styles.failed}>Non envoyé · toucher pour réessayer</span>
+                        <span className={styles.failed}>Non envoyé. Touche pour réessayer.</span>
                       ) : (
                         time(m.createdAt)
                       )}

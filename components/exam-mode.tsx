@@ -76,7 +76,7 @@ export default function ExamMode({
   return (
     <div className="exam-mode" role="dialog" aria-modal="true" aria-label="Mode examen">
       <h2>
-        {paper.subjectName} · {paper.year}
+        {paper.subjectName} {paper.year}
       </h2>
       {!run ? (
         <>

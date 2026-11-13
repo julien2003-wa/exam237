@@ -6,11 +6,11 @@ import AppShellRuntime from '@/components/app-shell-runtime';
 
 const siteUrl = (process.env.APP_URL || 'https://exam237.vercel.app').replace(/\/+$/, '');
 const description =
-  'Les vrais sujets d’examen du Cameroun (BEPC, Probatoire, Bac), corrigés et expliqués comme en classe. Chat de ta classe, vidéos et Prof IA.';
+  'Les anciens sujets du BEPC, du Probatoire et du Bac avec leurs corrections. Chat de classe, vidéos et Prof IA.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: 'Exam237', template: '%s · Exam237' },
+  title: { default: 'Exam237', template: '%s | Exam237' },
   description,
   applicationName: 'Exam237',
   manifest: '/manifest.webmanifest',
@@ -27,16 +27,16 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'fr_CM',
     siteName: 'Exam237',
-    title: 'Exam237 · Sujets corrigés pour réussir ton examen',
+    title: 'Exam237 : les sujets corrigés du BEPC, du Probatoire et du Bac',
     description,
     url: '/bienvenue',
     images: [
-      { url: '/og.png', width: 1200, height: 630, alt: 'Exam237 — sujets d’examen corrigés' },
+      { url: '/og.png', width: 1200, height: 630, alt: 'Exam237, sujets d’examen corrigés' },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Exam237 · Sujets corrigés pour réussir ton examen',
+    title: 'Exam237 : les sujets corrigés du BEPC, du Probatoire et du Bac',
     description,
     images: ['/og.png'],
   },

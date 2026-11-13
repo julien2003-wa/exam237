@@ -3,6 +3,7 @@ import { del } from '@vercel/blob';
 import { NextRequest, NextResponse } from 'next/server';
 import { db, isUuid } from '@/lib/db';
 import { ensureSchema } from '@/lib/schema';
+import { deletionErrorMessage, removeStudentAccount } from '@/lib/accounts';
 import { getViewer, hasPremium, sha256, type Viewer } from '@/lib/auth';
 import { freePaperIds, isPremiumViewer } from '@/lib/access';
 import { decryptMessage } from '@/lib/crypto';
@@ -353,11 +354,12 @@ async function adminOverview(viewer: Viewer) {
           SELECT user_id,MAX(last_seen_at) AS last_seen_at,COUNT(*) FILTER(WHERE expires_at>NOW())::int AS active_sessions
           FROM jl_sessions WHERE role='user' AND user_id IS NOT NULL GROUP BY user_id
         )
-        SELECT u.id,u.email,u.premium_until,u.created_at,u.disabled_at,p.display_name,p.class_code,p.account_status,p.chat_muted_until,
+        SELECT u.id,u.email,u.role,u.premium_until,u.created_at,u.disabled_at,p.display_name,p.class_code,p.account_status,p.chat_muted_until,
                c.label AS class_label,g.label AS group_label,ss.last_seen_at,COALESCE(ss.active_sessions,0)::int AS active_sessions
         FROM jl_users u LEFT JOIN ex237_user_profiles p ON p.user_id=u.id LEFT JOIN ex237_classes c ON c.code=p.class_code
         LEFT JOIN ex237_groups g ON g.id=c.group_id LEFT JOIN ss ON ss.user_id=u.id
-        WHERE u.role IN ('student','user') ORDER BY u.created_at DESC`,
+        WHERE u.role='student' OR (u.role='user' AND p.user_id IS NOT NULL)
+        ORDER BY u.created_at DESC`,
     sql`SELECT r.id,r.group_id,r.title,r.active,g.label AS group_label,
                (SELECT COUNT(*)::int FROM ex237_chat_messages m WHERE m.room_id=r.id) AS message_count
         FROM ex237_chat_rooms r JOIN ex237_groups g ON g.id=r.group_id ORDER BY g.display_order,g.label`,
@@ -392,6 +394,8 @@ async function adminOverview(viewer: Viewer) {
   const mappedUsers = (users as any[]).map(u => ({
     id: u.id,
     email: u.email,
+    // Compte qui ne vient pas d'Exam237 (JulienLab…) : retiré d'Exam237 seulement, jamais supprimé.
+    shared: u.role !== 'student',
     displayName: u.display_name || '',
     classCode: u.class_code || null,
     classLabel: u.class_label || null,
@@ -577,15 +581,14 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
 
   if (action === 'delete_user') {
     if (!isUuid(id)) return fail('Élève invalide.');
-    // Données ajoutées par la V6 (au cas où la base n'a pas pu créer les liens automatiques).
-    await sql`DELETE FROM ex237_user_papers WHERE user_id=${id}`;
-    await sql`DELETE FROM ex237_tutor_messages WHERE user_id=${id}`;
-    await sql`DELETE FROM ex237_premium_log WHERE user_id=${id}`;
-    await sql`DELETE FROM ex237_chat_reactions WHERE user_id=${id}`;
-    await sql`UPDATE ex237_content_reports SET user_id=NULL WHERE user_id=${id}`;
-    await sql`UPDATE ex237_content_views SET user_id=NULL WHERE user_id=${id}`;
-    await sql`DELETE FROM jl_users WHERE id=${id} AND role IN ('student','user')`;
-    return json({ ok: true });
+    try {
+      const result = await removeStudentAccount(id);
+      return json({ ok: true, ...result });
+    } catch (error) {
+      const { message, status } = deletionErrorMessage(error);
+      console.error('Suppression d’élève refusée', error);
+      return fail(message, status);
+    }
   }
 
   if (action === 'set_user_class') {

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { db, isUuid } from '@/lib/db';
 import { ensureSchema } from '@/lib/schema';
+import { deletionErrorMessage, removeStudentAccount } from '@/lib/accounts';
 import {
   currentUserTokenHash,
   destroySessions,
@@ -142,21 +143,13 @@ export async function POST(req: NextRequest) {
     const rows: any[] = await sql`SELECT password_hash FROM jl_users WHERE id=${userId} LIMIT 1`;
     if (!rows[0] || !verifyPassword(password, rows[0].password_hash))
       return fail('Mot de passe incorrect.', 403);
-    await ensureSchema();
-    await sql`DELETE FROM ex237_chat_reports WHERE reporter_user_id=${userId}`;
-    await sql`DELETE FROM ex237_chat_reports WHERE message_id IN (SELECT id FROM ex237_chat_messages WHERE sender_user_id=${userId})`;
-    await sql`UPDATE ex237_chat_messages SET reply_to_id=NULL WHERE reply_to_id IN (SELECT id FROM ex237_chat_messages WHERE sender_user_id=${userId})`;
-    await sql`DELETE FROM ex237_chat_messages WHERE sender_user_id=${userId}`;
-    await sql`DELETE FROM ex237_chat_reactions WHERE user_id=${userId}`;
-    await sql`DELETE FROM ex237_tutor_messages WHERE user_id=${userId}`;
-    await sql`DELETE FROM ex237_user_papers WHERE user_id=${userId}`;
-    await sql`DELETE FROM ex237_premium_log WHERE user_id=${userId}`;
-    await sql`UPDATE ex237_content_reports SET user_id=NULL WHERE user_id=${userId}`;
-    await sql`UPDATE ex237_content_views SET user_id=NULL WHERE user_id=${userId}`;
-    await sql`DELETE FROM ex237_password_reset_tokens WHERE user_id=${userId}`;
-    await sql`DELETE FROM jl_sessions WHERE user_id=${userId}`;
-    await sql`DELETE FROM ex237_user_profiles WHERE user_id=${userId}`;
-    await sql`DELETE FROM jl_users WHERE id=${userId}`;
+    try {
+      await removeStudentAccount(userId);
+    } catch (error) {
+      const { message, status } = deletionErrorMessage(error);
+      console.error('Suppression de compte refusée', error);
+      return fail(message, status);
+    }
     const response = json({ ok: true });
     await destroySessions(req, response);
     return response;

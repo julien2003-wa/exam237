@@ -6,7 +6,7 @@ const MODES = [
   {
     id: 'mention',
     label: 'Sur demande',
-    help: 'L’assistant répond quand un élève écrit @assistant (bouton 🎓 dans le chat) ou répond à un de ses messages.',
+    help: 'L’assistant répond quand un élève écrit @assistant (bouton chapeau du chat) ou répond à un de ses messages.',
   },
   {
     id: 'auto',
@@ -283,16 +283,14 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
         title="Dernières questions"
         count={overview?.recent?.length ?? 0}
         actions={
-          <button className="btn btn-light btn-sm" onClick={load}>
-            ↻
+          <button className="btn btn-light btn-sm" onClick={load} aria-label="Actualiser">
+            Actualiser
           </button>
         }
       >
         <p className="adm-note">
-          Dans le chat, les élèves écrivent <b>@assistant</b> suivi de leur question (ou touchent le
-          chapeau 🎓). Toi, tu peux toucher n’importe quel message du chat puis « Faire répondre
-          l’assistant ». Les questions posées au Prof IA privé apparaissent aussi ici, pour vérifier
-          la qualité des réponses.
+          Questions du chat et du Prof IA privé. Dans le chat, tu peux aussi toucher un message puis
+          « Faire répondre l’assistant ».
         </p>
         <div className="adm-list">
           {(overview?.recent || []).map((r: any) => {
@@ -323,7 +321,7 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
                 {r.answer && open ? (
                   <blockquote className="adm-quote green">{r.answer}</blockquote>
                 ) : null}
-                {r.error ? <span className="adm-sub">⚠️ {r.error}</span> : null}
+                {r.error ? <span className="adm-sub">Erreur : {r.error}</span> : null}
                 {r.answer || (r.question && r.question.length > 220) ? (
                   <div className="adm-actions">
                     <button

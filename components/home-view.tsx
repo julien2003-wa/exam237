@@ -151,7 +151,7 @@ export default function HomeView({
           <section className="card plan-card">
             <span className="tag">Version gratuite</span>
             <h2>Débloque tous les sujets corrigés</h2>
-            <p>Corrections expliquées comme en classe, vidéos, Prof IA et lecture hors ligne.</p>
+            <p>Toutes les corrections, les vidéos, le Prof IA et la lecture sans connexion.</p>
             <button type="button" className="btn btn-gold btn-lg" onClick={() => onPremium()}>
               <Icon name="star" size={18} />
               Passer Premium
@@ -181,7 +181,7 @@ export default function HomeView({
             <section className="card mini-card">
               <span className="k">Reprendre</span>
               <b>
-                {resumePaper.subjectName} · {resumePaper.year}
+                {resumePaper.subjectName} {resumePaper.year}
               </b>
               <small>Ouvert {timeAgo(resume!.openedAt)}</small>
               <button className="btn btn-primary btn-sm" onClick={() => onOpenPaper(resumePaper)}>
@@ -293,7 +293,7 @@ export function PaperRow({ paper, onOpen }: { paper: Paper; onOpen: (paper: Pape
       </span>
       <span className="meta">
         <b>
-          {paper.subjectName} · {paper.year}
+          {paper.subjectName} {paper.year}
         </b>
         <span className="tags">
           <small>{paper.session}</small>

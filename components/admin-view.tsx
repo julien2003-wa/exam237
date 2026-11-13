@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Icon } from './icons';
 import { api, type Act, type Notify } from './admin/shared';
 import Dashboard from './admin/dashboard';
 import Students, { type StudentFilter } from './admin/students';
@@ -99,7 +100,6 @@ export default function AdminView({ notify }: { notify: Notify }) {
       <div className="adm-head">
         <div>
           <h2>Administration</h2>
-          <p>Élèves, Premium, contenus, vidéos et chat au même endroit.</p>
         </div>
         <button
           className="btn btn-light btn-sm"
@@ -107,7 +107,8 @@ export default function AdminView({ notify }: { notify: Notify }) {
           disabled={refreshing}
           aria-label="Actualiser"
         >
-          ↻<span className="adm-hide-mobile">{refreshing ? ' Actualisation…' : ' Actualiser'}</span>
+          <Icon name="refresh" size={16} />
+          <span className="adm-hide-mobile">{refreshing ? 'Actualisation…' : 'Actualiser'}</span>
         </button>
       </div>
 

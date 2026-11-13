@@ -329,19 +329,17 @@ export default function TutorView({
             <span className={styles.bigIcon}>
               <Icon name="lock" size={26} />
             </span>
-            <h2>Ton prof particulier, 7 j/7</h2>
+            <h2>Le Prof IA, avec Premium</h2>
             <p>
-              Pose tes questions ou envoie la <b>photo d’un exercice</b>. Le Prof IA t’explique pas
-              à pas : d’abord des indices pour que tu trouves toi-même, puis la solution si tu la
-              demandes.
+              Pose tes questions ou envoie la <b>photo d’un exercice</b>. Il te donne d’abord des
+              indices pour que tu trouves toi-même, puis la solution si tu la demandes.
             </p>
             <div className={styles.sample} aria-hidden="true">
               <span className={styles.sampleMine}>
                 Je bloque sur l’exercice 2 : résoudre 2x + 6 = 0
               </span>
               <span className={styles.sampleAi}>
-                Bonne question ! Indice : que dois-tu faire pour que le « 6 » passe de l’autre côté
-                du signe égal ?
+                Indice : que dois-tu faire pour que le 6 passe de l’autre côté du signe égal ?
               </span>
             </div>
             <button type="button" className="btn btn-gold btn-lg btn-block" onClick={onPremium}>
@@ -372,8 +370,8 @@ export default function TutorView({
       <div ref={listRef} className={chat.list}>
         <div className={chat.spacer} />
         <div className={styles.notice}>
-          Conversation privée : tes camarades ne la voient pas. Le Prof IA peut se tromper, vérifie
-          avec tes cours.
+          Conversation privée. Le Prof IA est une intelligence artificielle : il peut se tromper,
+          vérifie avec tes cours.
         </div>
 
         {!messages.length ? (
@@ -383,8 +381,8 @@ export default function TutorView({
             </span>
             <b>Bonjour {viewer.displayName.split(' ')[0] || ''} !</b>
             <p>
-              Écris ta question ou touche <Icon name="camera" size={15} className="inline-icon" />{' '}
-              pour envoyer la photo d’un exercice. Je te guide pas à pas.
+              Écris ta question, ou envoie la photo d’un exercice avec{' '}
+              <Icon name="camera" size={15} className="inline-icon" />.
             </p>
             <div className={styles.starters}>
               {STARTERS.map(s => (
@@ -464,7 +462,6 @@ export default function TutorView({
                   ) : null}
                   <span className={chat.text}>{m.text}</span>
                   <span className={chat.meta}>
-                    {!mine ? <span className={chat.aiNote}>IA · peut se tromper</span> : null}
                     {m.status === 'failed' ? (
                       <span className={chat.failed}>Pas de réponse</span>
                     ) : (

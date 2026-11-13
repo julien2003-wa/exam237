@@ -65,28 +65,23 @@ export default function Reports({ act, onChanged }: { act: Act; onChanged: () =>
 
       {tab === 'chat' ? (
         <>
-          <p className="adm-note">
-            Les élèves signalent un message depuis le chat (toucher le message → Signaler). Supprime
-            le message, ignore le signalement ou coupe la parole à l’auteur.
-          </p>
           <div className="adm-list">
             {reports.map(r => (
               <ReportCard key={r.messageId} report={r} run={run} />
             ))}
-            {!reports.length ? <div className="adm-empty">Aucun message signalé. 👍</div> : null}
+            {!reports.length ? <div className="adm-empty">Aucun message signalé.</div> : null}
           </div>
         </>
       ) : (
         <>
           <p className="adm-note">
-            Les élèves signalent une erreur depuis un sujet (« Signaler une erreur »). Corrige le
-            PDF dans l’onglet Sujets & corrections, puis marque le signalement comme traité.
+            Corrige le PDF dans Sujets & corrections, puis marque le signalement comme traité.
           </p>
           <div className="adm-list">
             {content.map(r => (
               <ContentReportCard key={r.id} report={r} run={run} />
             ))}
-            {!content.length ? <div className="adm-empty">Aucune erreur signalée. 👍</div> : null}
+            {!content.length ? <div className="adm-empty">Aucune erreur signalée.</div> : null}
           </div>
         </>
       )}
@@ -99,7 +94,7 @@ export default function Reports({ act, onChanged }: { act: Act; onChanged: () =>
           onChanged();
         }}
       >
-        ↻ Actualiser
+        Actualiser
       </button>
     </div>
   );
@@ -199,15 +194,13 @@ function ReportCard({
       <div className="adm-children">
         {report.reports.map((x: any) => (
           <div key={x.id} className="adm-sub">
-            🚩 <b>{x.reporterName}</b> · {formatDate(x.createdAt, true)}
-            {x.reason ? ` — « ${x.reason} »` : ''}
+            <b>{x.reporterName}</b>, {formatDate(x.createdAt, true)}
+            {x.reason ? ` : « ${x.reason} »` : ''}
           </div>
         ))}
       </div>
       {report.mutedUntil ? (
-        <span className="adm-sub">
-          🔇 Auteur muet jusqu’à {formatDate(report.mutedUntil, true)}
-        </span>
+        <span className="adm-sub">Auteur muet jusqu’à {formatDate(report.mutedUntil, true)}</span>
       ) : null}
       <div className="adm-actions">
         <button
