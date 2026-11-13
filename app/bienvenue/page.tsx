@@ -418,7 +418,7 @@ export default async function Bienvenue() {
       <section className="lp-section">
         <div className="lp-head">
           <h2>Révise comme le jour de l’examen</h2>
-          <p>Des écrans de la vraie application.</p>
+          <p>Des écrans de l’application, avec un compte de démonstration.</p>
         </div>
         <Showcase items={showcase} />
       </section>
