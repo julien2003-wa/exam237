@@ -1,5 +1,5 @@
 'use client';
-import { upload } from '@vercel/blob/client';
+import { uploadPresigned } from '@vercel/blob/client';
 import { useState, type ReactNode } from 'react';
 
 export type Notify = (message: string, type?: 'error') => void;
@@ -26,7 +26,64 @@ function safePdfName(name: string) {
   return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
-// Envoi direct navigateur → Vercel Blob (privé). Renvoie le pathname à enregistrer.
+// Raison lisible d'un échec pendant l'envoi lui-même (erreurs de la bibliothèque Vercel Blob).
+function uploadError(e: any) {
+  const message = String(e?.message || '').replace(/^Vercel Blob:\s*/, '');
+  if (e?.name === 'AbortError' || /aborted/i.test(message)) return 'envoi annulé.';
+  if (/Failed to fetch|fetch failed|NetworkError|Load failed|not available/i.test(message))
+    return 'la connexion a été coupée. Vérifie internet, puis réessaie.';
+  if (/Content type mismatch/i.test(message)) return 'ce format de fichier n’est pas accepté.';
+  if (/too large/i.test(message)) return 'fichier trop lourd.';
+  if (/presigned URL|client token/i.test(message))
+    return 'le site n’a pas donné l’autorisation d’envoi. Recharge la page, puis réessaie.';
+  if (/expired|Access denied/i.test(message)) return 'l’autorisation d’envoi a expiré. Réessaie.';
+  return message || 'erreur inconnue.';
+}
+
+// Envoi direct navigateur → Vercel Blob (privé), par un lien d'envoi présigné. Le site vérifie
+// d'abord la demande (session, fichier, stockage) pour pouvoir expliquer un refus en français.
+// Renvoie le pathname à enregistrer.
+async function sendFile(
+  pathname: string,
+  file: File,
+  contentType: string,
+  what: string,
+  onProgress?: (percent: number) => void
+) {
+  let check: Response;
+  try {
+    check = await fetch('/api/files', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'exam237.check-upload',
+        payload: { pathname, size: file.size, contentType },
+      }),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new Error(`Import ${what} impossible : pas de connexion internet. Réessaie.`);
+  }
+  if (!check.ok) {
+    const d = await check.json().catch(() => ({}));
+    throw new Error(
+      `Import ${what} impossible : ${d.error || `le site a refusé (erreur ${check.status}).`}`
+    );
+  }
+  try {
+    const blob = await uploadPresigned(pathname, file, {
+      access: 'private',
+      handleUploadUrl: '/api/files',
+      contentType,
+      multipart: file.size > 8 * 1024 * 1024,
+      onUploadProgress: e => onProgress?.(Math.round(e.percentage)),
+    });
+    return blob.pathname;
+  } catch (e) {
+    throw new Error(`Import ${what} impossible : ${uploadError(e)}`);
+  }
+}
+
 export async function uploadPdf(
   file: File,
   kind: 'paper' | 'correction',
@@ -36,21 +93,8 @@ export async function uploadPdf(
   if (!looksPdf) throw new Error('Choisis un fichier PDF.');
   if (file.size > MAX_PDF_MB * 1024 * 1024)
     throw new Error(`PDF trop volumineux (maximum ${MAX_PDF_MB} Mo).`);
-  try {
-    const blob = await upload(`exam237/${kind}/${Date.now()}-${safePdfName(file.name)}`, file, {
-      access: 'private',
-      handleUploadUrl: '/api/files',
-      contentType: 'application/pdf',
-      multipart: file.size > 8 * 1024 * 1024,
-      onUploadProgress: e => onProgress?.(Math.round(e.percentage)),
-    });
-    return blob.pathname;
-  } catch (e: any) {
-    const message = String(e?.message || '');
-    throw new Error(
-      message ? `Import du PDF impossible : ${message}` : 'Import du PDF impossible.'
-    );
-  }
+  const pathname = `exam237/${kind}/${Date.now()}-${safePdfName(file.name)}`;
+  return sendFile(pathname, file, 'application/pdf', 'du PDF', onProgress);
 }
 
 export const MAX_VIDEO_MB = 60;
@@ -78,21 +122,13 @@ export async function uploadVideo(file: File, onProgress?: (percent: number) => 
       .replace(/[^a-zA-Z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 80) || 'video';
-  try {
-    const blob = await upload(`exam237/promo/${Date.now()}-${base}.${safeExt}`, file, {
-      access: 'private',
-      handleUploadUrl: '/api/files',
-      contentType: type,
-      multipart: file.size > 8 * 1024 * 1024,
-      onUploadProgress: e => onProgress?.(Math.round(e.percentage)),
-    });
-    return blob.pathname;
-  } catch (e: any) {
-    const message = String(e?.message || '');
-    throw new Error(
-      message ? `Import de la vidéo impossible : ${message}` : 'Import de la vidéo impossible.'
-    );
-  }
+  return sendFile(
+    `exam237/promo/${Date.now()}-${base}.${safeExt}`,
+    file,
+    type,
+    'de la vidéo',
+    onProgress
+  );
 }
 
 export function Progress({ value }: { value: number | null | undefined }) {

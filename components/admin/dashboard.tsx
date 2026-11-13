@@ -82,7 +82,7 @@ export default function Dashboard({
       label: 'Stockage des fichiers (Vercel Blob)',
       help: data.blobConfigured
         ? 'PDF et vidéos sont stockés en privé.'
-        : 'Ajoute BLOB_READ_WRITE_TOKEN dans Vercel.',
+        : 'Dans Vercel : Storage → ton stockage Blob → Projects, brancher le projet exam237.',
     },
   ];
   const missing = checks.filter(c => !c.ok).length;

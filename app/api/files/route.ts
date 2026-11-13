@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { get, head } from '@vercel/blob';
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import { get, head, issueSignedToken } from '@vercel/blob';
+import { handleUpload, handleUploadPresigned } from '@vercel/blob/client';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { db, isUuid } from '@/lib/db';
 import { getViewer, isActiveStudent, type Viewer } from '@/lib/auth';
@@ -8,11 +8,23 @@ import { canOpenPaper, isPremiumViewer } from '@/lib/access';
 import { ensureSchema } from '@/lib/schema';
 
 // Import direct navigateur → Vercel Blob : le fichier ne passe pas par la fonction
-// Vercel (limitée à 4,5 Mo par requête). Seul le jeton d'envoi est généré ici.
+// Vercel (limitée à 4,5 Mo par requête). Seule l'autorisation d'envoi est préparée ici.
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
-const PDF_PATH = /^exam237\/(paper|correction)\/[A-Za-z0-9._-]{1,160}\.pdf$/;
-const VIDEO_PATH = /^exam237\/promo\/[A-Za-z0-9._-]{1,160}\.(mp4|webm|mov)$/;
+const UPLOAD_RULES = [
+  {
+    path: /^exam237\/(paper|correction)\/[A-Za-z0-9._-]{1,160}\.pdf$/,
+    types: ['application/pdf'],
+    max: MAX_PDF_BYTES,
+    kind: 'PDF',
+  },
+  {
+    path: /^exam237\/promo\/[A-Za-z0-9._-]{1,160}\.(mp4|webm|mov)$/,
+    types: ['video/mp4', 'video/webm', 'video/quicktime'],
+    max: MAX_VIDEO_BYTES,
+    kind: 'vidéo',
+  },
+];
 const fail = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
 
 // Où lire le fichier : un chemin du stockage privé, ou (anciens contenus) l'adresse complète
@@ -212,40 +224,140 @@ export async function HEAD(req: NextRequest) {
   });
 }
 
-// Génère le jeton d'envoi pour @vercel/blob/client (upload()) — réservé à l'admin.
+type UploadRule = (typeof UPLOAD_RULES)[number];
+
+function uploadRule(pathname: string) {
+  return UPLOAD_RULES.find(rule => rule.path.test(pathname)) || null;
+}
+
+function checkUpload(
+  pathname: string,
+  size: unknown,
+  contentType: unknown
+): { rule: UploadRule } | { error: string } {
+  const rule = uploadRule(pathname);
+  if (!rule) return { error: 'nom de fichier refusé.' };
+  if (typeof contentType === 'string' && contentType && !rule.types.includes(contentType))
+    return {
+      error:
+        rule.kind === 'PDF'
+          ? 'seuls les PDF sont acceptés.'
+          : 'choisis une vidéo MP4, WebM ou MOV.',
+    };
+  if (typeof size === 'number' && size <= 0) return { error: 'le fichier est vide.' };
+  if (typeof size === 'number' && size > rule.max)
+    return { error: `fichier trop lourd (maximum ${Math.round(rule.max / 1048576)} Mo).` };
+  return { rule };
+}
+
+// Autorisation d'écrire ce seul fichier, demandée au stockage. Fonctionne avec le branchement
+// récent du stockage (le site s'identifie tout seul grâce à BLOB_STORE_ID, sans clé) comme avec
+// une clé BLOB_READ_WRITE_TOKEN.
+function signedToken(rule: UploadRule, pathname: string) {
+  return issueSignedToken({
+    pathname,
+    operations: ['put'],
+    allowedContentTypes: rule.types,
+    maximumSizeInBytes: rule.max,
+  });
+}
+
+// Raison lisible quand le stockage refuse de préparer un envoi (affichée après « Import … impossible : »).
+function storageMessage(e: unknown) {
+  const message = String((e as any)?.message || '').replace(/^Vercel Blob:\s*/, '');
+  const linkHelp = 'Dans Vercel : Storage → exam237-files → Projects, brancher le projet exam237.';
+  if (/No blob credentials|No read-write token/i.test(message))
+    return `le stockage des fichiers n’est pas branché sur cette version du site. ${linkHelp}`;
+  if (/OIDC is enabled|environment.*not allowed|not allowed.*environment/i.test(message))
+    return `le stockage n’accepte pas cette version du site (Production ou Preview). ${linkHelp}`;
+  if (/Access denied/i.test(message)) return `le stockage a refusé l’accès. ${linkHelp}`;
+  if (/store does not exist/i.test(message))
+    return 'le stockage exam237-files est introuvable dans Vercel.';
+  if (/suspended/i.test(message))
+    return 'le stockage exam237-files est suspendu dans Vercel (quota dépassé ?).';
+  if (/not available|rate limit|too many/i.test(message))
+    return 'le stockage ne répond pas pour l’instant. Réessaie dans une minute.';
+  return `le stockage a refusé l’envoi (${message.slice(0, 160) || 'raison inconnue'}).`;
+}
+
+// Prépare l'envoi direct navigateur → Vercel Blob (réservé à l'admin).
+// « exam237.check-upload » vérifie d'abord tout (session, fichier, stockage) et renvoie la raison
+// exacte d'un refus : la bibliothèque de Vercel n'affiche qu'un message générique en anglais.
 export async function POST(req: NextRequest) {
   const viewer = await getViewer(req);
-  if (!viewer || viewer.role !== 'admin') return fail('Non autorisé.', 403);
-  let body: HandleUploadBody;
+  if (!viewer || viewer.role !== 'admin')
+    return fail('ta session admin a expiré. Reconnecte-toi, puis réessaie.', 403);
+  let body: any;
   try {
     body = await req.json();
   } catch {
-    return fail('Requête invalide.');
+    return fail('requête invalide.');
   }
-  // Aucun rappel « envoi terminé » n'est configuré : on n'accepte que la demande de jeton.
-  if (body?.type !== 'blob.generate-client-token') return fail('Requête invalide.');
-  try {
-    const result = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async pathname => {
-        if (PDF_PATH.test(pathname))
-          return {
-            allowedContentTypes: ['application/pdf'],
-            maximumSizeInBytes: MAX_PDF_BYTES,
-            addRandomSuffix: true,
-          };
-        if (VIDEO_PATH.test(pathname))
-          return {
-            allowedContentTypes: ['video/mp4', 'video/webm', 'video/quicktime'],
-            maximumSizeInBytes: MAX_VIDEO_BYTES,
-            addRandomSuffix: true,
-          };
-        throw new Error('Nom de fichier invalide.');
-      },
-    });
-    return NextResponse.json(result);
-  } catch (e: any) {
-    return fail(e?.message || 'Import impossible.', 400);
+  const type = String(body?.type || '');
+  const payload = body?.payload || {};
+  const pathname = String(payload.pathname || '');
+
+  if (type === 'exam237.check-upload') {
+    const checked = checkUpload(pathname, payload.size, payload.contentType);
+    if ('error' in checked) return fail(checked.error);
+    try {
+      await signedToken(checked.rule, pathname);
+      return NextResponse.json({ ok: true });
+    } catch (e) {
+      console.error('Envoi impossible (vérification) :', e);
+      return fail(storageMessage(e), 502);
+    }
   }
+
+  // Méthode actuelle : lien d'envoi présigné.
+  if (type === 'blob.generate-presigned-url') {
+    const rule = uploadRule(pathname);
+    if (!rule) return fail('nom de fichier refusé.');
+    try {
+      const result = await handleUploadPresigned({
+        body,
+        request: req,
+        // Aucun rappel « envoi terminé » n'est accepté ici : cette clé de vérification ne sert pas.
+        webhookPublicKey: process.env.BLOB_WEBHOOK_PUBLIC_KEY || 'non-utilisee',
+        getSignedToken: async () => ({
+          token: await signedToken(rule, pathname),
+          urlOptions: {
+            allowedContentTypes: rule.types,
+            maximumSizeInBytes: rule.max,
+            addRandomSuffix: true,
+          },
+        }),
+      });
+      return NextResponse.json(result);
+    } catch (e) {
+      console.error('Envoi impossible :', e);
+      return fail(storageMessage(e), 502);
+    }
+  }
+
+  // Ancienne méthode (page admin ouverte avant la mise à jour) : exige une clé BLOB_READ_WRITE_TOKEN.
+  if (type === 'blob.generate-client-token') {
+    if (!process.env.BLOB_READ_WRITE_TOKEN)
+      return fail('recharge la page de l’admin (le site a été mis à jour), puis réessaie.');
+    const rule = uploadRule(pathname);
+    if (!rule) return fail('nom de fichier refusé.');
+    try {
+      const result = await handleUpload({
+        body,
+        request: req,
+        onBeforeGenerateToken: async () => ({
+          allowedContentTypes: rule.types,
+          maximumSizeInBytes: rule.max,
+          addRandomSuffix: true,
+        }),
+      });
+      return NextResponse.json(result);
+    } catch (e) {
+      console.error('Envoi impossible :', e);
+      return fail(storageMessage(e), 502);
+    }
+  }
+
+  // Aucun rappel « envoi terminé » n'est configuré : tout autre message est refusé.
+  return fail('requête invalide.');
 }

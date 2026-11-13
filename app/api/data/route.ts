@@ -436,7 +436,8 @@ async function adminOverview(viewer: Viewer) {
     promos: (promos as any[]).map(p => ({ ...p, youtube_id: youtubeId(p.youtube_url) })),
     assistantConfigured: assistantConfigured(),
     realtimeConfigured: realtimeConfigured(),
-    blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
+    // Branchement récent du stockage : BLOB_STORE_ID (le site s'identifie tout seul) ; ancien : une clé.
+    blobConfigured: !!(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN),
     expiring: expiring.slice(0, 30),
     topPapers,
     stats: {
