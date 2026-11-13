@@ -30,6 +30,87 @@ function initials(name: string) {
   );
 }
 
+type Browser =
+  'ios-safari' | 'ios-chrome' | 'ios-other' | 'in-app' | 'samsung' | 'android' | 'desktop';
+
+// Chaque navigateur installe une application web à sa façon : on montre le bon chemin.
+function detectBrowser(): Browser {
+  const ua = navigator.userAgent;
+  if (/FBAN|FBAV|FB_IAB|Instagram|TikTok|musical_ly|Snapchat/i.test(ua)) return 'in-app';
+  const ios =
+    /iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  if (ios) {
+    if (/CriOS/i.test(ua)) return 'ios-chrome';
+    if (/FxiOS|EdgiOS|OPiOS|OPT\//i.test(ua)) return 'ios-other';
+    return 'ios-safari';
+  }
+  if (/SamsungBrowser/i.test(ua)) return 'samsung';
+  if (/android/i.test(ua)) return 'android';
+  return 'desktop';
+}
+
+function InstallSteps({ browser }: { browser: Browser }) {
+  const text = { margin: 0, color: 'var(--text)', lineHeight: 1.5 } as const;
+  const note = { margin: 0, color: 'var(--muted)', fontSize: '0.86rem', lineHeight: 1.45 } as const;
+  switch (browser) {
+    case 'ios-safari':
+      return (
+        <>
+          <p style={text}>
+            Touche le bouton <b>Partager</b> (le carré avec une flèche, en bas de l’écran), puis{' '}
+            <b>Sur l’écran d’accueil</b> et <b>Ajouter</b>.
+          </p>
+          <p style={note}>Lien ouvert depuis WhatsApp ? Ouvre-le d’abord dans Safari.</p>
+        </>
+      );
+    case 'ios-chrome':
+      return (
+        <>
+          <p style={text}>
+            Touche le bouton <b>Partager</b> dans la barre d’adresse (en haut à droite), puis{' '}
+            <b>Ajouter à l’écran d’accueil</b>.
+          </p>
+          <p style={note}>Il faut iOS 16.4 ou plus récent. Sinon, ouvre Exam237 dans Safari.</p>
+        </>
+      );
+    case 'ios-other':
+      return (
+        <p style={text}>
+          Touche le bouton <b>Partager</b> de ton navigateur, puis <b>Sur l’écran d’accueil</b>. Si
+          l’option n’apparaît pas, ouvre Exam237 dans Safari.
+        </p>
+      );
+    case 'in-app':
+      return (
+        <p style={text}>
+          Tu es dans le navigateur de Facebook, Instagram ou TikTok : il ne permet pas d’installer.
+          Touche le menu <b>⋯</b> puis <b>Ouvrir dans le navigateur</b> (Chrome ou Safari), et
+          reviens ici.
+        </p>
+      );
+    case 'samsung':
+      return (
+        <p style={text}>
+          Touche le menu <b>≡</b> (en bas), puis <b>Ajouter la page à</b> et <b>Écran d’accueil</b>.
+        </p>
+      );
+    case 'android':
+      return (
+        <p style={text}>
+          Ouvre le menu <b>⋮</b> (en haut à droite), puis <b>Installer l’application</b> ou{' '}
+          <b>Ajouter à l’écran d’accueil</b>.
+        </p>
+      );
+    default:
+      return (
+        <p style={text}>
+          Dans Chrome ou Edge, clique sur l’icône d’installation à droite de la barre d’adresse, ou
+          cherche <b>Installer Exam237</b> dans le menu du navigateur.
+        </p>
+      );
+  }
+}
+
 function PasswordInput({
   value,
   onChange,
@@ -89,13 +170,13 @@ export default function ProfileView({
   const [downloads, setDownloads] = useState<OfflineItem[]>([]);
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [installed, setInstalled] = useState(false);
-  const [isIos, setIsIos] = useState(false);
+  const [browser, setBrowser] = useState<Browser>('android');
   const [deletePwd, setDeletePwd] = useState('');
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setDownloads(offlineList());
-    setIsIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    setBrowser(detectBrowser());
     setInstalled(
       window.matchMedia?.('(display-mode: standalone)').matches ||
         (navigator as any).standalone === true
@@ -417,15 +498,8 @@ export default function ProfileView({
                   <Icon name="install" size={18} /> Installer Exam237
                 </button>
               </>
-            ) : isIos ? (
-              <p style={{ margin: 0, color: 'var(--text)', lineHeight: 1.5 }}>
-                Dans Safari, touche le bouton <b>Partager</b> puis <b>Sur l’écran d’accueil</b>.
-              </p>
             ) : (
-              <p style={{ margin: 0, color: 'var(--text)', lineHeight: 1.5 }}>
-                Ouvre le menu de ton navigateur (⋮) puis choisis <b>Installer l’application</b> ou{' '}
-                <b>Ajouter à l’écran d’accueil</b>.
-              </p>
+              <InstallSteps browser={browser} />
             )}
           </div>
         </details>
