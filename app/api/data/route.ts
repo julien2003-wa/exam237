@@ -608,8 +608,14 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
     const user = await sql`SELECT id FROM jl_users WHERE id=${id} LIMIT 1`;
     if (!user[0]) return fail('Élève introuvable.', 404);
     const token = crypto.randomBytes(32).toString('base64url');
-    await sql`DELETE FROM ex237_password_reset_tokens WHERE user_id=${id} OR expires_at<NOW()`;
-    await sql`INSERT INTO ex237_password_reset_tokens(id,user_id,token_hash,expires_at,created_at) VALUES(${crypto.randomUUID()},${id},${sha256(token)},NOW()+INTERVAL '24 hours',NOW())`;
+    try {
+      await sql`DELETE FROM ex237_reset_links WHERE user_id=${id} OR expires_at<NOW()`;
+      await sql`INSERT INTO ex237_reset_links(id,user_id,token_hash,expires_at,created_at)
+                VALUES(${crypto.randomUUID()},${id},${sha256(token)},NOW()+INTERVAL '24 hours',NOW())`;
+    } catch (e: any) {
+      console.error('Lien de mot de passe :', e);
+      return fail(`Le lien n’a pas pu être créé (${String(e?.message || e).slice(0, 160)}).`, 500);
+    }
     return json({ ok: true, link: `${appUrl(req)}/reset?token=${encodeURIComponent(token)}` });
   }
 

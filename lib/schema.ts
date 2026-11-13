@@ -7,7 +7,7 @@ import { db } from './db';
   Une seule requête par démarrage d'instance une fois la base à jour.
 */
 
-const SCHEMA_VERSION = '6.0';
+const SCHEMA_VERSION = '6.1';
 
 let ready: Promise<void> | null = null;
 
@@ -173,6 +173,19 @@ async function migrate() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
   await sql`CREATE INDEX IF NOT EXISTS ex237_promo_events_idx ON ex237_promo_events (promo_id, kind)`;
+
+  // Liens « nouveau mot de passe » créés par l'admin (valables 24 h, une seule fois).
+  // Table propre à la V6 : elle ne dépend pas de l'ancienne table des liens, absente
+  // ou différente selon les bases.
+  await sql`CREATE TABLE IF NOT EXISTS ex237_reset_links (
+    id UUID PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS ex237_reset_links_user_idx ON ex237_reset_links (user_id)`;
 
   // Passage au modèle « presque tout Premium » : tous les sujets deviennent Premium,
   // puis l'admin choisit ses sujets gratuits (sinon un sujet corrigé par matière est

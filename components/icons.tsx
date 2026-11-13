@@ -60,6 +60,7 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   x: <path d="M6 6l12 12M18 6 6 18" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   back: <path d="M15 5l-7 7 7 7" />,
   chevron: <path d="M9 6l6 6-6 6" />,
   down: <path d="M6 9l6 6 6-6" />,

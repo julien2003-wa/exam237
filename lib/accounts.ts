@@ -33,6 +33,7 @@ const HANDLED = new Set([
   'ex237_content_views',
   'ex237_promo_events',
   'ex237_password_reset_tokens',
+  'ex237_reset_links',
   'ex237_login_attempts',
   'ex237_user_profiles',
 ]);
@@ -121,6 +122,8 @@ export async function removeStudentAccount(
     queries.push(sql`UPDATE ex237_promo_events SET user_id=NULL WHERE user_id=${userId}`);
   if (has('ex237_password_reset_tokens'))
     queries.push(sql`DELETE FROM ex237_password_reset_tokens WHERE user_id=${userId}`);
+  if (has('ex237_reset_links'))
+    queries.push(sql`DELETE FROM ex237_reset_links WHERE user_id=${userId}`);
   if (has('ex237_login_attempts'))
     queries.push(sql`DELETE FROM ex237_login_attempts WHERE key=${`email:${user.email}`}`);
 

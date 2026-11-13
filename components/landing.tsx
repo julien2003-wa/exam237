@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons';
 import { examTime } from '@/lib/exams';
+import type { CatalogExam } from '@/lib/landing-data';
 
 function useReducedMotion() {
   const [reduce, setReduce] = useState(false);
@@ -36,22 +37,55 @@ function useOnScreen<T extends Element>(threshold = 0.25) {
   return [ref, visible] as const;
 }
 
-/* ---------- Le mot de l'examen, dans le titre ---------- */
+/* ---------- Menu (téléphone) ---------- */
 
-export function ExamWord({ words }: { words: string[] }) {
-  const [index, setIndex] = useState(0);
-  const reduce = useReducedMotion();
+export function LandingMenu({ links }: { links: Array<{ href: string; label: string }> }) {
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (reduce || words.length < 2) return;
-    const timer = window.setInterval(() => setIndex(i => (i + 1) % words.length), 2600);
-    return () => window.clearInterval(timer);
-  }, [reduce, words.length]);
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
   return (
-    <span className="lp-word" aria-hidden="true">
-      <span key={index} className="lp-word-in">
-        {words[index]}
-      </span>
-    </span>
+    <div className="lp-menu">
+      <button
+        type="button"
+        className="lp-menu-btn"
+        aria-expanded={open}
+        aria-controls="lp-menu-panel"
+        aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
+        onClick={() => setOpen(o => !o)}
+      >
+        <Icon name={open ? 'x' : 'menu'} size={22} />
+      </button>
+      {open ? (
+        <>
+          <button
+            type="button"
+            className="lp-menu-backdrop"
+            aria-label="Fermer le menu"
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+          />
+          <nav id="lp-menu-panel" className="lp-menu-panel" aria-label="Menu">
+            {links.map(link => (
+              <a key={link.href} href={link.href} onClick={() => setOpen(false)}>
+                {link.label}
+                <Icon name="chevron" size={18} />
+              </a>
+            ))}
+            <a
+              className="lp-btn lp-btn-sun"
+              href="/connexion?mode=register"
+              onClick={() => setOpen(false)}
+            >
+              Commencer gratuitement
+            </a>
+          </nav>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -192,9 +226,11 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export function ExamCountdown({
   targets,
   serverNow,
+  more,
 }: {
   targets: CountdownTarget[];
   serverNow: number;
+  more?: { href: string; label: string };
 }) {
   const [now, setNow] = useState(serverNow);
   const [selected, setSelected] = useState(0);
@@ -249,20 +285,20 @@ export function ExamCountdown({
           </div>
         ))}
       </div>
-      <p className="lp-count-caption">{target.caption}</p>
+      <p className="lp-count-caption">
+        {target.caption}
+        {more ? (
+          <>
+            {' '}
+            <a href={more.href}>{more.label}</a>
+          </>
+        ) : null}
+      </p>
     </div>
   );
 }
 
 /* ---------- Les sujets déjà disponibles ---------- */
-
-export type CatalogExam = {
-  exam: string;
-  subjects: Array<{
-    name: string;
-    years: Array<{ year: number; count: number; corrected: boolean }>;
-  }>;
-};
 
 export function SubjectExplorer({ catalog }: { catalog: CatalogExam[] }) {
   const [exam, setExam] = useState(0);
@@ -317,7 +353,10 @@ export function SubjectExplorer({ catalog }: { catalog: CatalogExam[] }) {
           <ul>
             {chosen.years.map(y => (
               <li key={y.year}>
-                <b>{y.year}</b>
+                <div className="lp-year">
+                  <b>{y.year}</b>
+                  {y.fresh ? <em className="lp-new">Nouveau</em> : null}
+                </div>
                 <span>
                   {y.count > 1 ? `${y.count} sujets` : 'Sujet'}
                   {y.corrected ? ' et correction' : ''}

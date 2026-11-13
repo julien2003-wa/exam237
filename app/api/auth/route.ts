@@ -136,15 +136,16 @@ export async function POST(req: NextRequest) {
     const token = String(data.token || '');
     const password = String(data.password || '');
     if (password.length < 8) return fail('Le mot de passe doit contenir au moins 8 caractères.');
+    await ensureSchema();
     const rows = await sql`
-      SELECT id,user_id FROM ex237_password_reset_tokens
+      SELECT id,user_id FROM ex237_reset_links
       WHERE token_hash=${sha256(token)} AND used_at IS NULL AND expires_at>NOW()
       LIMIT 1
     `;
     const reset: any = rows[0];
     if (!reset) return fail('Ce lien est invalide ou a expiré.', 400);
     await sql`UPDATE jl_users SET password_hash=${hashPassword(password)},updated_at=NOW() WHERE id=${reset.user_id}`;
-    await sql`UPDATE ex237_password_reset_tokens SET used_at=NOW() WHERE id=${reset.id}`;
+    await sql`UPDATE ex237_reset_links SET used_at=NOW() WHERE id=${reset.id}`;
     await sql`DELETE FROM jl_sessions WHERE user_id=${reset.user_id}`;
     return ok({ message: 'Mot de passe modifié.' });
   }

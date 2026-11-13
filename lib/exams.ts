@@ -28,7 +28,22 @@ export const OFFICIAL_EXAM_PERIOD = {
   start: '2027-04-19',
   end: '2027-07-30',
   year: 2027,
+  schoolYear: '2026-2027',
+  published: '2026-08-14',
+  eps: { start: '2027-04-26', end: '2027-05-07' },
 };
+
+// « lundi 19 avril 2027 », « mardi 1er juin 2027 ».
+export function longDate(date: string, withWeekday = true) {
+  const text = new Intl.DateTimeFormat('fr-FR', {
+    ...(withWeekday ? { weekday: 'long' as const } : {}),
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Africa/Douala',
+  }).format(new Date(`${date}T12:00:00+01:00`));
+  return text.replace(/(^|\s)1 /, '$11er ');
+}
 
 export type ExamTarget = {
   title: string; // « BEPC 2027 » ou « Examens officiels 2027 »
