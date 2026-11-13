@@ -1,5 +1,13 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import HomeView from './home-view';
@@ -10,8 +18,11 @@ import PremiumSheet from './premium-sheet';
 import PaperSheet from './paper-sheet';
 import StoryViewer from './story-viewer';
 import ExamMode from './exam-mode';
+import PdfReader, { clearReaderCache } from './pdf-reader';
 import { Icon } from './icons';
 import { api, post, type Bootstrap, type Paper } from './lib';
+import * as nav from './nav';
+import { paths, parseRoute, routePath, VIEW_PATH, type Route, type View } from './nav';
 
 // Chargés seulement quand on en a besoin : les élèves ne téléchargent pas l'admin.
 const AdminView = dynamic(() => import('./admin-view'), {
@@ -25,9 +36,7 @@ const TutorView = dynamic(() => import('./tutor-view'), {
 
 export type { Viewer } from './lib';
 
-type Tab = 'home' | 'subjects' | 'chat' | 'tutor' | 'admin' | 'profile';
-
-const TAB_ICONS: Record<Tab, string> = {
+const TAB_ICONS: Record<View, string> = {
   home: 'home',
   subjects: 'book',
   chat: 'chat',
@@ -36,21 +45,39 @@ const TAB_ICONS: Record<Tab, string> = {
   profile: 'user',
 };
 
+const TITLES: Record<View, string> = {
+  home: 'Exam237',
+  subjects: 'Sujets',
+  chat: 'Chat',
+  tutor: 'Prof IA',
+  admin: 'Administration',
+  profile: 'Profil',
+};
+
 export default function ExamApp() {
   const router = useRouter();
   const [data, setData] = useState<Bootstrap | null>(null);
-  const [tab, setTab] = useState<Tab>('home');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; type?: 'error' } | null>(null);
   const [unread, setUnread] = useState(0);
-  const [premiumOpen, setPremiumOpen] = useState<{ renew?: boolean } | null>(null);
-  const [sheetPaperId, setSheetPaperId] = useState<string | null>(null);
-  const [storyIndex, setStoryIndex] = useState<number | null>(null);
-  const [examPaperId, setExamPaperId] = useState<string | null>(null);
-  const [subjectFocus, setSubjectFocus] = useState<string | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
   const scrollByTab = useRef<Record<string, number>>({});
+  const restoring = useRef(false);
   const toastTimer = useRef<number | null>(null);
+
+  // L'adresse décide de l'écran affiché (voir nav.ts).
+  const location = useSyncExternalStore(nav.subscribe, nav.snapshot, nav.serverSnapshot);
+  const known = location !== '';
+  const hashAt = location.indexOf('#');
+  const path = (hashAt >= 0 ? location.slice(0, hashAt) : location) || '/';
+  const modal = hashAt >= 0 ? location.slice(hashAt + 1) : null;
+  const route = useMemo(() => parseRoute(path), [path]);
+
+  // L'écran resté derrière un sujet ouvert (accueil, liste des sujets…).
+  const [base, setBase] = useState<Route | null>(null);
+  useEffect(() => {
+    if (known && !route.layer) setBase(route);
+  }, [known, route]);
 
   const notify = useCallback((text: string, type?: 'error') => {
     setToast({ text, type });
@@ -65,7 +92,10 @@ export default function ExamApp() {
       setData(d);
     } catch (e: any) {
       if (e?.status === 401) {
-        router.replace('/bienvenue');
+        clearReaderCache();
+        // Un lien partagé (un sujet, le chat…) : on y revient après la connexion.
+        const here = window.location.pathname;
+        router.replace(here === '/' ? '/bienvenue' : `/connexion?next=${encodeURIComponent(here)}`);
         return;
       }
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -92,17 +122,18 @@ export default function ExamApp() {
 
   const viewer = data?.viewer;
   const isAdmin = viewer?.role === 'admin';
+  const homeView: View = isAdmin ? 'admin' : 'home';
   const hasChat = !!(data?.rooms && data.rooms.length);
 
   const tabs = useMemo(() => {
-    if (!viewer) return [] as Array<{ id: Tab; label: string }>;
+    if (!viewer) return [] as Array<{ id: View; label: string }>;
     if (isAdmin)
       return [
-        { id: 'admin' as Tab, label: 'Admin' },
-        { id: 'chat' as Tab, label: 'Chats' },
-        { id: 'profile' as Tab, label: 'Profil' },
+        { id: 'admin' as View, label: 'Admin' },
+        { id: 'chat' as View, label: 'Chats' },
+        { id: 'profile' as View, label: 'Profil' },
       ];
-    const list: Array<{ id: Tab; label: string }> = [
+    const list: Array<{ id: View; label: string }> = [
       { id: 'home', label: 'Accueil' },
       { id: 'subjects', label: 'Sujets' },
     ];
@@ -112,38 +143,80 @@ export default function ExamApp() {
     return list;
   }, [viewer, isAdmin, hasChat, data?.assistant?.tutor]);
 
-  // L'admin arrive directement sur son tableau de bord.
-  useEffect(() => {
-    if (tabs.length && !tabs.some(t => t.id === tab)) setTab(tabs[0].id);
-  }, [tabs, tab]);
+  const paper = route.paperId ? data?.papers.find(p => p.id === route.paperId) || null : null;
 
-  const switchTab = useCallback((next: Tab) => {
-    setTab(current => {
-      if (current === next) return current;
-      if (mainRef.current) scrollByTab.current[current] = mainRef.current.scrollTop;
-      return next;
-    });
-  }, []);
+  // Écran affiché sous un sujet ouvert ; pour un lien partagé, la matière du sujet.
+  const shown: Route = route.layer
+    ? base || {
+        view: isAdmin ? 'admin' : 'subjects',
+        subject: paper?.subjectId || null,
+        paperId: null,
+        layer: null,
+        doc: null,
+      }
+    : route;
+  const wanted: View = shown.view === 'home' && isAdmin ? 'admin' : shown.view;
+  const tab: View = tabs.some(t => t.id === wanted) ? wanted : homeView;
+  const subjectFocus = tab === 'subjects' ? shown.subject : null;
 
+  // Adresse inconnue pour ce compte (chat absent, page admin…) : on la corrige.
   useEffect(() => {
+    if (!viewer || route.layer) return;
+    if (wanted !== tab) nav.navigate(VIEW_PATH[tab], { replace: true });
+    else if (isAdmin && path === '/') nav.navigate('/admin', { replace: true });
+  }, [viewer, route.layer, wanted, tab, isAdmin, path]);
+
+  // Sujet introuvable (retiré, ou d'une autre classe).
+  useEffect(() => {
+    if (!data || !route.paperId || paper) return;
+    notify('Ce sujet n’est pas disponible.', 'error');
+    nav.navigate(isAdmin ? '/admin' : '/sujets', { replace: true });
+  }, [data, route.paperId, paper, isAdmin, notify]);
+
+  // Titre de l'onglet du navigateur.
+  useEffect(() => {
+    if (!data) return;
+    let title = TITLES[tab];
+    if (paper && route.layer) {
+      const name = `${paper.subjectName} ${paper.year}`;
+      title =
+        route.layer === 'read'
+          ? `${name}, ${route.doc === 'paper' ? 'sujet' : 'correction'}`
+          : route.layer === 'exam'
+            ? `${name}, mode examen`
+            : name;
+    } else if (subjectFocus) {
+      title = data.papers.find(p => p.subjectId === subjectFocus)?.subjectName || title;
+    }
+    document.title = title === 'Exam237' ? title : `${title} | Exam237`;
+  }, [data, tab, paper, route.layer, route.doc, subjectFocus]);
+
+  // Chaque onglet retrouve l'endroit où l'élève l'avait laissé.
+  useLayoutEffect(() => {
     const el = mainRef.current;
     if (!el) return;
-    const id = requestAnimationFrame(() => {
-      el.scrollTop = scrollByTab.current[tab] || 0;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [tab]);
+    restoring.current = true;
+    el.scrollTop = scrollByTab.current[tab] || 0;
+    const timer = window.setTimeout(() => {
+      restoring.current = false;
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [tab, !!data]);
 
-  // Bouton « retour » du téléphone : revient à l'accueil au lieu de quitter l'appli.
-  useEffect(() => {
-    if (!viewer || isAdmin) return;
-    if (tab !== 'home') {
-      window.history.pushState({ exam237: tab }, '');
-      const onPop = () => setTab('home');
-      window.addEventListener('popstate', onPop);
-      return () => window.removeEventListener('popstate', onPop);
-    }
-  }, [tab, viewer, isAdmin]);
+  const goView = useCallback(
+    (next: View) => {
+      if (next === tab) {
+        if (next === 'subjects' && subjectFocus) return nav.backTo('/sujets');
+        mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      // Accueil : on revient en arrière plutôt que d'empiler les écrans.
+      if (next === homeView) return nav.backTo(VIEW_PATH[homeView]);
+      // Depuis l'accueil, un onglet s'ouvre par-dessus ; entre deux onglets, il remplace.
+      nav.navigate(VIEW_PATH[next], { replace: tab !== homeView });
+    },
+    [tab, homeView, subjectFocus]
+  );
 
   const updatePaper = useCallback((id: string, patch: Partial<Paper>) => {
     setData(current =>
@@ -154,13 +227,13 @@ export default function ExamApp() {
   }, []);
 
   const setPaperState = useCallback(
-    async (paper: Paper, patch: { favorite?: boolean; status?: 'done' | 'review' | null }) => {
-      const before = { favorite: paper.favorite, status: paper.status };
-      updatePaper(paper.id, patch as Partial<Paper>);
+    async (target: Paper, patch: { favorite?: boolean; status?: 'done' | 'review' | null }) => {
+      const before = { favorite: target.favorite, status: target.status };
+      updatePaper(target.id, patch as Partial<Paper>);
       try {
-        await post('/api/me', { action: 'paper_state', paperId: paper.id, ...patch });
+        await post('/api/me', { action: 'paper_state', paperId: target.id, ...patch });
       } catch (e: any) {
-        updatePaper(paper.id, before);
+        updatePaper(target.id, before);
         notify(e.message, 'error');
       }
     },
@@ -171,6 +244,7 @@ export default function ExamApp() {
     try {
       await post('/api/auth?action=logout', {});
     } finally {
+      clearReaderCache();
       router.replace('/bienvenue');
     }
   };
@@ -195,15 +269,36 @@ export default function ExamApp() {
     );
   }
 
-  const sheetPaper = sheetPaperId ? data.papers.find(p => p.id === sheetPaperId) || null : null;
-  const examPaper = examPaperId ? data.papers.find(p => p.id === examPaperId) || null : null;
   const immersive = tab === 'chat' || tab === 'tutor';
-  const openPaper = (paper: Paper) => setSheetPaperId(paper.id);
-  const openPremium = (renew = false) => setPremiumOpen({ renew });
+  const basePath = base ? routePath(base) : paper ? paths.subject(paper.subjectId) : '/sujets';
+  const openPaper = (p: Paper) => nav.navigate(paths.paper(p.id));
+  const openPremium = (renew = false) =>
+    nav.navigate(path, { modal: renew ? 'premium-renew' : 'premium' });
+  const closeModal = () => nav.close(path);
+  const storyIndex = modal?.startsWith('video:') ? Number(modal.slice(6)) : null;
+
+  // Un fichier enregistré sur le téléphone s'ouvre dans le lecteur.
+  const openSaved = (url: string) => {
+    const params = new URL(url, window.location.origin).searchParams;
+    const id = params.get('id') || '';
+    const owner =
+      params.get('kind') === 'paper'
+        ? data.papers.find(p => p.id === id)
+        : data.papers.find(p => p.corrections.some(c => c.id === id));
+    if (!owner) return false;
+    nav.navigate(paths.read(owner.id, params.get('kind') === 'paper' ? 'paper' : id));
+    return true;
+  };
 
   return (
     <div className="app" data-immersive={immersive ? 'true' : 'false'}>
-      <main ref={mainRef} className={`app-main ${immersive ? 'immersive' : ''}`}>
+      <main
+        ref={mainRef}
+        className={`app-main ${immersive ? 'immersive' : ''}`}
+        onScroll={e => {
+          if (!restoring.current) scrollByTab.current[tab] = e.currentTarget.scrollTop;
+        }}
+      >
         {data.warning && tab === 'home' ? (
           <div className="page" style={{ paddingBottom: 0 }}>
             <div className="banner">{data.warning}</div>
@@ -215,13 +310,12 @@ export default function ExamApp() {
             data={data}
             unread={unread}
             onOpenPaper={openPaper}
-            onOpenStory={setStoryIndex}
+            onOpenStory={index => nav.navigate(path, { modal: `video:${index}` })}
             onPremium={openPremium}
-            onOpenSubjects={subjectId => {
-              setSubjectFocus(subjectId || null);
-              switchTab('subjects');
-            }}
-            onOpenProfile={() => switchTab('profile')}
+            onOpenSubjects={subjectId =>
+              nav.navigate(subjectId ? paths.subject(subjectId) : '/sujets')
+            }
+            onOpenProfile={() => goView('profile')}
           />
         ) : null}
 
@@ -229,7 +323,11 @@ export default function ExamApp() {
           <SubjectsView
             papers={data.papers}
             focusSubject={subjectFocus}
-            onFocusSubject={setSubjectFocus}
+            onFocusSubject={id =>
+              id
+                ? nav.navigate(paths.subject(id), { replace: !!subjectFocus })
+                : nav.backTo('/sujets')
+            }
             onOpenPaper={openPaper}
             onPremium={() => openPremium()}
             premium={viewer.premium}
@@ -246,7 +344,7 @@ export default function ExamApp() {
               assistantEnabled={data.assistant.chat}
               notify={notify}
               onUnread={setUnread}
-              onBack={() => switchTab(isAdmin ? 'admin' : 'home')}
+              onBack={() => nav.backTo(VIEW_PATH[homeView])}
               onPremium={() => openPremium()}
             />
           </div>
@@ -256,7 +354,7 @@ export default function ExamApp() {
           <TutorView
             viewer={viewer}
             notify={notify}
-            onBack={() => switchTab('home')}
+            onBack={() => nav.backTo('/')}
             onPremium={() => openPremium()}
           />
         ) : null}
@@ -274,6 +372,7 @@ export default function ExamApp() {
             onLogout={logout}
             onRefresh={load}
             onPremium={openPremium}
+            onOpenSaved={openSaved}
             notify={notify}
           />
         ) : null}
@@ -293,7 +392,7 @@ export default function ExamApp() {
             key={t.id}
             type="button"
             aria-current={tab === t.id ? 'page' : undefined}
-            onClick={() => switchTab(t.id)}
+            onClick={() => goView(t.id)}
           >
             <span className="nav-pill">
               <Icon name={TAB_ICONS[t.id]} size={22} />
@@ -306,34 +405,41 @@ export default function ExamApp() {
         ))}
       </nav>
 
-      {sheetPaper ? (
+      {paper && route.layer === 'sheet' ? (
         <PaperSheet
-          paper={sheetPaper}
+          paper={paper}
           viewer={viewer}
-          onClose={() => setSheetPaperId(null)}
-          onPremium={() => {
-            setSheetPaperId(null);
-            openPremium();
-          }}
-          onState={patch => setPaperState(sheetPaper, patch)}
-          onExam={() => {
-            setSheetPaperId(null);
-            setExamPaperId(sheetPaper.id);
-          }}
+          onClose={() => !modal && nav.close(basePath)}
+          onPremium={() => openPremium()}
+          onState={patch => setPaperState(paper, patch)}
+          onExam={() => nav.navigate(paths.exam(paper.id))}
+          onRead={doc => nav.navigate(paths.read(paper.id, doc))}
           notify={notify}
         />
       ) : null}
 
-      {examPaper ? (
+      {paper && route.layer === 'read' ? (
+        <PdfReader
+          paper={paper}
+          doc={route.doc || 'paper'}
+          onClose={() => !modal && nav.close(paths.paper(paper.id))}
+          onSwitch={doc => nav.navigate(paths.read(paper.id, doc), { replace: true })}
+          onPremium={() => openPremium()}
+        />
+      ) : null}
+
+      {paper && route.layer === 'exam' ? (
         <ExamMode
-          paper={examPaper}
-          onClose={() => setExamPaperId(null)}
+          paper={paper}
+          onClose={() => nav.close(paths.paper(paper.id))}
+          onRead={() => nav.navigate(paths.read(paper.id, 'paper'))}
           onDone={() => {
-            if (examPaper.status !== 'done') setPaperState(examPaper, { status: 'done' });
+            if (paper.status !== 'done') setPaperState(paper, { status: 'done' });
           }}
-          onOpenSheet={() => {
-            setExamPaperId(null);
-            setSheetPaperId(examPaper.id);
+          onCorrection={() => {
+            const correction = paper.corrections.find(c => c.pdfUrl);
+            if (correction) nav.navigate(paths.read(paper.id, correction.id), { replace: true });
+            else nav.close(paths.paper(paper.id));
           }}
         />
       ) : null}
@@ -344,20 +450,17 @@ export default function ExamApp() {
           start={storyIndex}
           site={data.site}
           viewer={viewer}
-          onClose={() => setStoryIndex(null)}
-          onPremium={() => {
-            setStoryIndex(null);
-            openPremium();
-          }}
+          onClose={closeModal}
+          onPremium={() => nav.navigate(path, { replace: true, modal: 'premium' })}
         />
       ) : null}
 
-      {premiumOpen ? (
+      {modal === 'premium' || modal === 'premium-renew' ? (
         <PremiumSheet
           viewer={viewer}
           site={data.site}
-          renew={!!premiumOpen.renew}
-          onClose={() => setPremiumOpen(null)}
+          renew={modal === 'premium-renew'}
+          onClose={closeModal}
         />
       ) : null}
 

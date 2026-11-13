@@ -20,20 +20,22 @@ function format(ms: number) {
 export default function ExamMode({
   paper,
   onClose,
+  onRead,
   onDone,
-  onOpenSheet,
+  onCorrection,
 }: {
   paper: Paper;
   onClose: () => void;
+  onRead: () => void;
   onDone: () => void;
-  onOpenSheet: () => void;
+  onCorrection: () => void;
 }) {
   const [run, setRun] = useState<Run | null>(null);
   const [now, setNow] = useState(Date.now());
   const [finished, setFinished] = useState(false);
   const minutes = paper.durationMinutes || 120;
 
-  // Le chrono continue même si l'élève ouvre le PDF dans un autre onglet.
+  // Le chrono continue pendant que l'élève lit le sujet (il est gardé sur le téléphone).
   useEffect(() => {
     const saved = readLocal<Run | null>(KEY, null);
     if (saved && saved.paperId === paper.id) setRun(saved);
@@ -60,7 +62,7 @@ export default function ExamMode({
     writeLocal(KEY, next);
     setRun(next);
     setNow(Date.now());
-    if (paper.paperUrl) window.open(paper.paperUrl, '_blank', 'noopener');
+    if (paper.paperUrl) onRead();
   };
 
   const stop = () => {
@@ -113,7 +115,7 @@ export default function ExamMode({
               onClick={() => {
                 writeLocal(KEY, null);
                 onDone();
-                onOpenSheet();
+                onCorrection();
               }}
             >
               Voir la correction
@@ -133,15 +135,16 @@ export default function ExamMode({
           <div className={`timer ${left < 10 * 60000 ? 'low' : ''}`} aria-live="off">
             {format(left)}
           </div>
-          <p>Le chrono continue même si tu ouvres le sujet dans une autre fenêtre.</p>
+          <p>Le chrono continue pendant que tu lis le sujet.</p>
           <div className="btns">
             <button
               type="button"
               className="btn btn-light btn-lg"
-              onClick={() => paper.paperUrl && window.open(paper.paperUrl, '_blank', 'noopener')}
+              onClick={onRead}
+              disabled={!paper.paperUrl}
             >
               <Icon name="file" size={18} />
-              Rouvrir le sujet
+              Lire le sujet
             </button>
             <button type="button" className="btn btn-gold btn-lg" onClick={stop}>
               J’ai fini

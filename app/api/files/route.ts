@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { get } from '@vercel/blob';
+import { get, head } from '@vercel/blob';
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { db, isUuid } from '@/lib/db';
@@ -15,18 +15,39 @@ const PDF_PATH = /^exam237\/(paper|correction)\/[A-Za-z0-9._-]{1,160}\.pdf$/;
 const VIDEO_PATH = /^exam237\/promo\/[A-Za-z0-9._-]{1,160}\.(mp4|webm|mov)$/;
 const fail = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
 
+// Où lire le fichier : un chemin du stockage privé, ou (anciens contenus) l'adresse complète
+// d'un fichier Vercel Blob. Ces fichiers passent aussi par ici : le lecteur intégré peut alors
+// les lire par morceaux. Tout autre lien est simplement ouvert tel quel.
+function blobSource(pathname: string): { id: string; access: 'public' | 'private' } | null {
+  if (!/^https?:\/\//i.test(pathname)) return { id: pathname, access: 'private' };
+  try {
+    const url = new URL(pathname);
+    if (url.protocol === 'https:' && url.hostname.endsWith('.blob.vercel-storage.com'))
+      return { id: pathname, access: url.hostname.includes('.private.') ? 'private' : 'public' };
+  } catch {}
+  return null;
+}
+
 async function storedResponse(
   pathname: string | null | undefined,
   req: NextRequest,
   options: { fallbackType: string; cache: string }
 ) {
   if (!pathname) return fail('Fichier introuvable.', 404);
-  if (/^https?:\/\//i.test(pathname)) return NextResponse.redirect(pathname, 302);
+  const source = blobSource(pathname);
+  if (!source) return NextResponse.redirect(pathname, 302);
   const range = req.headers.get('range');
-  const result = await get(pathname, {
-    access: 'private',
-    ...(range ? { headers: { range } } : {}),
-  });
+  let result: Awaited<ReturnType<typeof get>> = null;
+  try {
+    result = await get(source.id, {
+      access: source.access,
+      ...(range ? { headers: { range } } : {}),
+    });
+  } catch (e) {
+    console.error('Lecture du fichier impossible:', e);
+    if (source.access === 'public') return NextResponse.redirect(pathname, 302);
+    return fail('Le fichier n’a pas pu être lu. Réessaie.', 502);
+  }
   if (!result || result.statusCode !== 200) return fail('Fichier introuvable.', 404);
   const headers = new Headers({
     'Content-Type': result.blob?.contentType || options.fallbackType,
@@ -58,7 +79,17 @@ function logView(viewer: Viewer, paperId: string, kind: 'paper' | 'correction') 
   }
 }
 
-export async function GET(req: NextRequest) {
+type Target = {
+  pathname: string | null | undefined;
+  fallbackType: string;
+  cache: string;
+  view?: { paperId: string; kind: 'paper' | 'correction' };
+};
+
+// Vérifie les droits (classe, Premium, admin) et renvoie le fichier demandé.
+async function resolveTarget(
+  req: NextRequest
+): Promise<{ viewer: Viewer; target: Target } | NextResponse> {
   const viewer = await getViewer(req);
   if (!viewer) return fail('Non connecté.', 401);
   const kind = req.nextUrl.searchParams.get('kind');
@@ -75,10 +106,14 @@ export async function GET(req: NextRequest) {
       await sql`SELECT video_path,kind,audience,active FROM ex237_promos WHERE id=${id} LIMIT 1`;
     const promo = rows[0];
     if (!promo || (!isAdmin && !promo.active)) return fail('Vidéo introuvable.', 404);
-    return storedResponse(promo.video_path, req, {
-      fallbackType: 'video/mp4',
-      cache: 'private, max-age=3600',
-    });
+    return {
+      viewer,
+      target: {
+        pathname: promo.video_path,
+        fallbackType: 'video/mp4',
+        cache: 'private, max-age=3600',
+      },
+    };
   }
 
   if (kind === 'paper') {
@@ -94,12 +129,16 @@ export async function GET(req: NextRequest) {
         return fail('Ce sujet n’appartient pas à ta classe.', 403);
       if (!(await canOpenPaper(viewer, String(p.id), viewer.groupId)))
         return fail('Ce sujet est réservé aux membres Premium.', 402);
-      logView(viewer, String(p.id), 'paper');
     }
-    return storedResponse(p.paper_url, req, {
-      fallbackType: 'application/pdf',
-      cache: 'private, no-store',
-    });
+    return {
+      viewer,
+      target: {
+        pathname: p.paper_url,
+        fallbackType: 'application/pdf',
+        cache: 'private, no-store, no-transform',
+        view: isAdmin ? undefined : { paperId: String(p.id), kind: 'paper' },
+      },
+    };
   }
 
   const rows: any[] = await sql`
@@ -117,11 +156,59 @@ export async function GET(req: NextRequest) {
       !(await canOpenPaper(viewer, String(c.paper_id), viewer.groupId))
     )
       return fail('Cette correction est réservée aux membres Premium.', 402);
-    logView(viewer, String(c.paper_id), 'correction');
   }
-  return storedResponse(c.correction_pdf_path, req, {
-    fallbackType: 'application/pdf',
-    cache: 'private, no-store',
+  return {
+    viewer,
+    target: {
+      pathname: c.correction_pdf_path,
+      fallbackType: 'application/pdf',
+      cache: 'private, no-store, no-transform',
+      view: isAdmin ? undefined : { paperId: String(c.paper_id), kind: 'correction' },
+    },
+  };
+}
+
+export async function GET(req: NextRequest) {
+  const resolved = await resolveTarget(req);
+  if (resolved instanceof NextResponse) return resolved;
+  const { viewer, target } = resolved;
+  // Le lecteur demande le fichier par morceaux : une seule ouverture est comptée, celle du
+  // premier morceau (ou du fichier entier).
+  const range = req.headers.get('range');
+  if (target.view && (!range || /^bytes=0-/.test(range)))
+    logView(viewer, target.view.paperId, target.view.kind);
+  return storedResponse(target.pathname, req, target);
+}
+
+// Taille du fichier, affichée avant l'ouverture (économie de données). Ne compte pas de vue.
+export async function HEAD(req: NextRequest) {
+  const resolved = await resolveTarget(req);
+  if (resolved instanceof NextResponse) return new NextResponse(null, { status: resolved.status });
+  const { target } = resolved;
+  const source = target.pathname ? blobSource(target.pathname) : null;
+  if (!source) return new NextResponse(null, { status: 204 });
+  let info: { size: number; type: string | null } | null = null;
+  try {
+    const found = await head(source.id);
+    info = { size: found.size, type: found.contentType };
+  } catch {
+    // Fichier public d'un autre espace de stockage : on demande sa taille directement.
+    if (source.access === 'public')
+      try {
+        const r = await fetch(source.id, { method: 'HEAD' });
+        const size = Number(r.headers.get('content-length'));
+        if (r.ok && size > 0) info = { size, type: r.headers.get('content-type') };
+      } catch {}
+  }
+  if (!info) return new NextResponse(null, { status: 404 });
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Content-Type': info.type || target.fallbackType,
+      'Content-Length': String(info.size),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'private, max-age=600',
+    },
   });
 }
 

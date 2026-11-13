@@ -36,7 +36,7 @@ export default function PremiumSheet({
   }, [onClose]);
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop over" onClick={onClose}>
       <div
         className="sheet"
         role="dialog"

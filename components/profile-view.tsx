@@ -11,7 +11,9 @@ import {
   openOffline,
   post,
   removeOffline,
+  setWifiOnly,
   whatsappUrl,
+  wifiOnly,
   type Notify,
   type OfflineItem,
   type Site,
@@ -153,6 +155,7 @@ export default function ProfileView({
   onLogout,
   onRefresh,
   onPremium,
+  onOpenSaved,
   notify,
 }: {
   viewer: Viewer;
@@ -160,6 +163,7 @@ export default function ProfileView({
   onLogout: () => void;
   onRefresh: () => Promise<void> | void;
   onPremium: (renew?: boolean) => void;
+  onOpenSaved: (url: string) => boolean;
   notify: Notify;
 }) {
   const isStudent = viewer.role === 'student';
@@ -173,9 +177,11 @@ export default function ProfileView({
   const [browser, setBrowser] = useState<Browser>('android');
   const [deletePwd, setDeletePwd] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [wifi, setWifi] = useState(false);
 
   useEffect(() => {
     setDownloads(offlineList());
+    setWifi(wifiOnly());
     setBrowser(detectBrowser());
     setInstalled(
       window.matchMedia?.('(display-mode: standalone)').matches ||
@@ -234,6 +240,8 @@ export default function ProfileView({
   };
 
   const openDownload = async (item: OfflineItem) => {
+    // Dans le lecteur de l'application si le sujet est encore là, sinon dans le téléphone.
+    if (onOpenSaved(item.key)) return;
     try {
       await openOffline(item.key, item.title);
     } catch (e: any) {
@@ -427,6 +435,25 @@ export default function ProfileView({
               <Icon name="chevron" size={18} />
             </summary>
             <div className="fold-body">
+              {viewer.premium && offlineSupported() ? (
+                <label className="switch-row">
+                  <span className="grow">
+                    <b>Télécharger seulement en Wi-Fi</b>
+                    <small>Pour ne pas utiliser tes données mobiles.</small>
+                  </span>
+                  <span className="switch">
+                    <input
+                      type="checkbox"
+                      checked={wifi}
+                      onChange={e => {
+                        setWifi(e.target.checked);
+                        setWifiOnly(e.target.checked);
+                      }}
+                    />
+                    <span aria-hidden="true" />
+                  </span>
+                </label>
+              ) : null}
               {!offlineSupported() ? (
                 <p style={{ margin: 0, color: 'var(--muted)' }}>
                   Ton navigateur ne permet pas la lecture hors ligne.

@@ -245,7 +245,48 @@ export async function copyText(value: string) {
 
 /* ---------------- Lecture hors ligne (Premium) ---------------- */
 
-const OFFLINE_CACHE = 'exam237-offline-v1';
+/* ---------------- Économie de données ---------------- */
+
+const sizeCache = new Map<string, Promise<number | null>>();
+
+// Taille d'un fichier avant de l'ouvrir (requête HEAD, aucune donnée du fichier téléchargée).
+export function fileSize(url: string | null | undefined): Promise<number | null> {
+  if (!url) return Promise.resolve(null);
+  let pending = sizeCache.get(url);
+  if (!pending) {
+    pending = fetch(url, { method: 'HEAD', cache: 'no-store' })
+      .then(r => {
+        const n = Number(r.headers.get('content-length'));
+        return r.ok && n > 0 ? n : null;
+      })
+      .catch(() => null);
+    sizeCache.set(url, pending);
+  }
+  return pending;
+}
+
+const WIFI_KEY = 'exam237-wifi-seulement';
+
+// « Télécharger seulement en Wi-Fi » : activé d'office si le téléphone demande d'économiser les données.
+export function wifiOnly(): boolean {
+  const saved = readLocal<boolean | null>(WIFI_KEY, null);
+  if (saved !== null) return saved;
+  return !!(typeof navigator !== 'undefined' && (navigator as any).connection?.saveData);
+}
+
+export function setWifiOnly(value: boolean) {
+  writeLocal(WIFI_KEY, value);
+}
+
+// « wifi », « cellular » (données mobiles) ou « unknown » (iPhone : le navigateur ne le dit pas).
+export function connectionType(): 'wifi' | 'cellular' | 'unknown' {
+  const type = typeof navigator !== 'undefined' ? (navigator as any).connection?.type : undefined;
+  if (type === 'wifi' || type === 'ethernet') return 'wifi';
+  if (type === 'cellular' || type === 'wimax' || type === 'bluetooth') return 'cellular';
+  return 'unknown';
+}
+
+export const OFFLINE_CACHE = 'exam237-offline-v1';
 const OFFLINE_INDEX = 'exam237-offline-index';
 
 export type OfflineItem = {

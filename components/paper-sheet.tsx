@@ -1,7 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Icon } from './icons';
+import { preloadReader } from './pdf-reader';
 import {
+  connectionType,
+  fileSize,
   formatSize,
   isSavedOffline,
   offlineSupported,
@@ -10,6 +13,7 @@ import {
   subjectColor,
   subjectShort,
   whatsappUrl,
+  wifiOnly,
   type Notify,
   type Paper,
   type Viewer,
@@ -22,6 +26,7 @@ export default function PaperSheet({
   onPremium,
   onState,
   onExam,
+  onRead,
   notify,
 }: {
   paper: Paper;
@@ -30,6 +35,7 @@ export default function PaperSheet({
   onPremium: () => void;
   onState: (patch: { favorite?: boolean; status?: 'done' | 'review' | null }) => void;
   onExam: () => void;
+  onRead: (doc: string) => void;
   notify: Notify;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
@@ -38,6 +44,7 @@ export default function PaperSheet({
   const [reportText, setReportText] = useState('');
   const [reportTarget, setReportTarget] = useState<string>('');
   const [sending, setSending] = useState(false);
+  const [sizes, setSizes] = useState<Record<string, number | null>>({});
   const color = subjectColor(paper.subjectName);
   const title = `${paper.subjectName} ${paper.year}`;
 
@@ -46,7 +53,22 @@ export default function PaperSheet({
       Boolean
     ) as string[];
     setSaved(Object.fromEntries(urls.map(u => [u, isSavedOffline(u)])));
+    // Taille de chaque fichier, affichée avant l'ouverture.
+    let alive = true;
+    Promise.all(urls.map(async u => [u, await fileSize(u)] as const)).then(list => {
+      if (alive) setSizes(Object.fromEntries(list));
+    });
+    return () => {
+      alive = false;
+    };
   }, [paper]);
+
+  const sizeLabel = (url: string | null | undefined) => {
+    if (!url) return '';
+    if (saved[url]) return 'sur ton téléphone';
+    const n = sizes[url];
+    return n ? formatSize(n) : '';
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -61,11 +83,13 @@ export default function PaperSheet({
 
   const download = async (url: string, kind: 'paper' | 'correction', label: string) => {
     if (!viewer.premium) return onPremium();
+    if (saved[url]) return;
     setSaving(url);
     try {
       const size = await saveOffline(url, { title, subtitle: label, kind });
       setSaved(s => ({ ...s, [url]: true }));
       notify(`Enregistré sur ton téléphone (${formatSize(size)}).`);
+      preloadReader();
     } catch (e: any) {
       notify(e.message, 'error');
     } finally {
@@ -74,7 +98,7 @@ export default function PaperSheet({
   };
 
   const share = async () => {
-    const link = `${window.location.origin}/bienvenue`;
+    const link = `${window.location.origin}/sujets/${paper.id}`;
     const text = `Je révise le sujet de ${paper.subjectName} ${paper.year} sur Exam237. Viens réviser avec moi : ${link}`;
     try {
       if (navigator.share) {
@@ -108,6 +132,9 @@ export default function PaperSheet({
   };
 
   const status = paper.status;
+  const offlineTotal = [paper.paperUrl, ...paper.corrections.map(c => c.pdfUrl)]
+    .filter(Boolean)
+    .reduce((sum, u) => sum + (sizes[u as string] || 0), 0);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -164,23 +191,28 @@ export default function PaperSheet({
           </div>
         ) : (
           <div className="action-list">
-            <button type="button" className="action primary" onClick={() => open(paper.paperUrl)}>
+            <button type="button" className="action primary" onClick={() => onRead('paper')}>
               <Icon name="file" />
               <span className="grow">
                 Ouvrir le sujet
-                <small>PDF</small>
+                <small>{['PDF', sizeLabel(paper.paperUrl)].filter(Boolean).join(', ')}</small>
               </span>
               <Icon name="chevron" />
             </button>
             {paper.corrections.map(c => (
               <div key={c.id} className="action-list">
                 {c.pdfUrl ? (
-                  <button type="button" className="action" onClick={() => open(c.pdfUrl)}>
+                  <button type="button" className="action" onClick={() => onRead(c.id)}>
                     <Icon name="check" />
                     <span className="grow">
                       {c.title || 'Correction'}
                       <small>
-                        {c.reviewer ? `Relue par ${c.reviewer}` : 'Correction détaillée'}
+                        {[
+                          c.reviewer ? `Relue par ${c.reviewer}` : 'Correction détaillée',
+                          sizeLabel(c.pdfUrl),
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
                       </small>
                     </span>
                     <Icon name="chevron" />
@@ -218,21 +250,52 @@ export default function PaperSheet({
                 aria-disabled={saving !== null}
                 onClick={async () => {
                   if (saving) return;
+                  if (!viewer.premium) return onPremium();
+                  const files = [
+                    paper.paperUrl!,
+                    ...paper.corrections.map(c => c.pdfUrl).filter(Boolean),
+                  ].filter(u => !saved[u as string]) as string[];
+                  if (!files.length) return notify('Déjà enregistré sur ton téléphone.');
+                  const total = files.reduce((sum, u) => sum + (sizes[u] || 0), 0);
+                  const amount = total ? ` (${formatSize(total)})` : '';
+                  if (wifiOnly()) {
+                    const net = connectionType();
+                    if (net === 'cellular')
+                      return notify(
+                        'Tu as choisi de télécharger seulement en Wi-Fi. Connecte-toi au Wi-Fi, ou change ce réglage dans ton profil.',
+                        'error'
+                      );
+                    if (
+                      net === 'unknown' &&
+                      !window.confirm(
+                        `Es-tu en Wi-Fi ? Ce téléchargement${amount} utilise tes données mobiles sinon.`
+                      )
+                    )
+                      return;
+                  } else if (
+                    total > 5 * 1024 * 1024 &&
+                    connectionType() !== 'wifi' &&
+                    !window.confirm(`Télécharger ${formatSize(total)} sur ton téléphone ?`)
+                  )
+                    return;
                   await download(paper.paperUrl!, 'paper', 'Sujet');
                   for (const c of paper.corrections)
-                    if (c.pdfUrl && viewer.premium)
-                      await download(c.pdfUrl, 'correction', c.title || 'Correction');
+                    if (c.pdfUrl) await download(c.pdfUrl, 'correction', c.title || 'Correction');
                 }}
               >
                 <Icon name={viewer.premium ? 'download' : 'lock'} />
                 <span className="grow">
                   {saved[paper.paperUrl] ? 'Enregistré sur ton téléphone' : 'Lire sans connexion'}
                   <small>
-                    {viewer.premium
-                      ? saving
+                    {!viewer.premium
+                      ? 'Réservé au Premium'
+                      : saving
                         ? 'Téléchargement…'
-                        : 'Sujet et corrections enregistrés sur ton téléphone'
-                      : 'Réservé au Premium'}
+                        : saved[paper.paperUrl]
+                          ? 'Sujet et corrections, lisibles sans internet'
+                          : offlineTotal
+                            ? `Sujet et corrections, ${formatSize(offlineTotal)}`
+                            : 'Sujet et corrections, pour réviser sans internet'}
                   </small>
                 </span>
               </button>

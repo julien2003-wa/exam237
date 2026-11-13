@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icons';
+import { safeNext } from '@/components/nav';
 
 type PublicClass = {
   code: string;
@@ -59,14 +60,18 @@ export default function Connexion() {
   const [busy, setBusy] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [email, setEmail] = useState('');
+  // Page demandée avant la connexion (un sujet partagé, par exemple).
+  const [next, setNext] = useState('/');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const target = safeNext(params.get('next'));
+    setNext(target);
     if (params.get('mode') === 'register' || window.location.hash === '#inscription')
       setMode('register');
     fetch('/api/auth?action=me', { cache: 'no-store' })
       .then(r => {
-        if (r.ok) router.replace('/');
+        if (r.ok) router.replace(target);
       })
       .catch(() => {});
     fetch('/api/data?action=public', { cache: 'no-store' })
@@ -110,7 +115,7 @@ export default function Connexion() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || 'Une erreur est survenue. Réessaie.');
-      router.replace('/');
+      router.replace(next);
     } catch (err: any) {
       setError(
         err?.message === 'Failed to fetch'

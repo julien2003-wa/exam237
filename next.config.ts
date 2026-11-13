@@ -20,6 +20,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // Lecteur PDF : le numéro de version est dans l'adresse, ces fichiers ne changent jamais.
+      // Gardés en cache sur le téléphone, ils ne se téléchargent qu'une fois.
+      {
+        source: '/pdfjs/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        source: '/pdfjs/:version/:file(.*\\.mjs)',
+        headers: [{ key: 'Content-Type', value: 'text/javascript; charset=utf-8' }],
+      },
+      {
+        source: '/pdfjs/:version/wasm/:file(.*\\.wasm)',
+        headers: [{ key: 'Content-Type', value: 'application/wasm' }],
+      },
       {
         source: '/sw.js',
         headers: [
