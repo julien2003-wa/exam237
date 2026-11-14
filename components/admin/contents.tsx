@@ -1,6 +1,17 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
-import { Badge, FilePicker, formatDate, Section, uploadPdf, type Act, type Notify } from './shared';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDuration } from '@/lib/durations';
+import { paperFileUrl, readDuration } from './durations';
+import {
+  api,
+  Badge,
+  FilePicker,
+  formatDate,
+  Section,
+  uploadPdf,
+  type Act,
+  type Notify,
+} from './shared';
 
 const PAPER_STATUS: Record<string, { label: string; tone: 'green' | 'grey' | 'gold' }> = {
   published: { label: 'Publié', tone: 'green' },
@@ -29,22 +40,187 @@ function ReviewerField({ value, onChange }: { value: string; onChange: (v: strin
   );
 }
 
-function DurationField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function DurationField({
+  value,
+  onChange,
+  note,
+  onRead,
+  reading,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  note?: string;
+  onRead?: () => void;
+  reading?: boolean;
+}) {
   return (
     <div className="field">
       <label>Durée de l’épreuve (minutes)</label>
-      <input
-        className="input"
-        type="number"
-        inputMode="numeric"
-        min={10}
-        max={360}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="Ex. 120"
-      />
-      <small>Sert au mode examen (chrono). Laisse vide si tu ne sais pas.</small>
+      <div className="adm-duration">
+        <input
+          className="input"
+          type="number"
+          inputMode="numeric"
+          min={10}
+          max={360}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Ex. 120"
+        />
+        {onRead ? (
+          <button
+            type="button"
+            className="btn btn-light btn-sm"
+            onClick={onRead}
+            disabled={reading}
+          >
+            {reading ? 'Lecture…' : 'Lire sur le sujet'}
+          </button>
+        ) : null}
+      </div>
+      <small aria-live="polite">
+        {note || 'Sert au chrono du mode examen. Comme sur le sujet, en minutes (2 h = 120).'}
+      </small>
     </div>
+  );
+}
+
+const NOT_FOUND_NOTE = 'Durée introuvable sur ce PDF (souvent un PDF scanné) : saisis-la.';
+
+// Quand l'admin choisit le PDF d'un sujet : la durée écrite en haut est lue et pré-remplie
+// (sans écraser une durée déjà saisie).
+function useDurationFromFile(
+  file: File | null,
+  setDuration: (update: (v: string) => string) => void
+) {
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    if (!file) {
+      setNote('');
+      return;
+    }
+    let live = true;
+    setNote('Lecture de la durée écrite sur le sujet…');
+    readDuration(file)
+      .then(minutes => {
+        if (!live) return;
+        if (!minutes) return setNote(NOT_FOUND_NOTE);
+        setDuration(current => current || String(minutes));
+        setNote(`Le sujet indique ${formatDuration(minutes)} (${minutes} min). Vérifie.`);
+      })
+      .catch(() => live && setNote('Durée non lue : saisis-la.'));
+    return () => {
+      live = false;
+    };
+  }, [file]);
+  return [note, setNote] as const;
+}
+
+// Lit la durée en haut de tous les sujets qui n'en ont pas (anciens sujets).
+function PaperDurations({ papers, act, notify }: { papers: any[]; act: Act; notify: Notify }) {
+  const missing = papers.filter(p => !p.duration_minutes && p.paper_url);
+  const [progress, setProgress] = useState<{ done: number; total: number; title: string } | null>(
+    null
+  );
+  const [result, setResult] = useState<{ found: number; notFound: any[] } | null>(null);
+  const stopRef = useRef(false);
+
+  const save = (items: { id: string; minutes: number }[]) =>
+    api('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set_paper_durations', items }),
+    });
+
+  const run = async () => {
+    const list = missing.slice();
+    const notFound: any[] = [];
+    let pending: { id: string; minutes: number }[] = [];
+    let found = 0;
+    stopRef.current = false;
+    setResult(null);
+    try {
+      for (let i = 0; i < list.length && !stopRef.current; i++) {
+        setProgress({ done: i, total: list.length, title: list[i].title });
+        const minutes = await readDuration(paperFileUrl(list[i].id)).catch(() => null);
+        if (minutes) {
+          pending.push({ id: list[i].id, minutes });
+          found++;
+        } else notFound.push(list[i]);
+        // Enregistré au fur et à mesure : rien n'est perdu si la page se ferme.
+        if (pending.length >= 10) {
+          await save(pending);
+          pending = [];
+        }
+      }
+      setProgress(null);
+      await act(
+        { action: 'set_paper_durations', items: pending },
+        found ? `Durée enregistrée pour ${found} sujet${found > 1 ? 's' : ''}.` : ''
+      );
+      setResult({ found, notFound });
+    } catch (e: any) {
+      setProgress(null);
+      notify(e?.message || 'Lecture des durées impossible.', 'error');
+    }
+  };
+
+  return (
+    <Section title="Durée du mode examen" count={missing.length || undefined} defaultOpen={false}>
+      {progress ? (
+        <div className="adm-durations-run" aria-live="polite">
+          <p>
+            Lecture {progress.done + 1} / {progress.total} : {progress.title}…
+          </p>
+          <button
+            type="button"
+            className="btn btn-light btn-sm"
+            onClick={() => (stopRef.current = true)}
+          >
+            Arrêter
+          </button>
+        </div>
+      ) : missing.length ? (
+        <>
+          <p className="adm-note">
+            {missing.length} sujet{missing.length > 1 ? 's n’ont' : ' n’a'} pas de durée : le mode
+            examen propose alors 2 h. Exam237 peut lire la durée écrite en haut de chaque PDF
+            («&nbsp;Durée&nbsp;: 2&nbsp;h&nbsp;», «&nbsp;Time allowed: 2&nbsp;hours&nbsp;»).
+          </p>
+          <button type="button" className="btn btn-primary" onClick={run}>
+            Lire la durée sur les sujets ({missing.length})
+          </button>
+        </>
+      ) : (
+        <p className="adm-note">
+          Tous les sujets ont une durée : le chrono du mode examen l’utilise.
+        </p>
+      )}
+      {result ? (
+        <div className="adm-durations-result" aria-live="polite">
+          <p>
+            Durée trouvée pour <b>{result.found}</b> sujet{result.found > 1 ? 's' : ''}.
+          </p>
+          {result.notFound.length ? (
+            <>
+              <p>
+                Introuvable sur {result.notFound.length} sujet
+                {result.notFound.length > 1 ? 's' : ''}, souvent des PDF scannés : ouvre
+                «&nbsp;Modifier&nbsp;» sur le sujet et saisis la durée.
+              </p>
+              <ul>
+                {result.notFound.map(p => (
+                  <li key={p.id}>
+                    {p.title}
+                    {p.class_label ? ` · ${p.class_label}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </Section>
   );
 }
 
@@ -90,6 +266,7 @@ export default function Contents({ data, act, notify }: { data: any; act: Act; n
   return (
     <div className="adm-stack">
       <PublishPaper classes={classes} subjects={subjects} act={act} notify={notify} />
+      <PaperDurations papers={papers} act={act} notify={notify} />
       <Subjects classes={classes} subjects={subjects} papers={papers} act={act} />
       <Section title="Sujets et corrections" count={papers.length}>
         <div className="adm-toolbar">
@@ -225,6 +402,7 @@ function PublishPaper({
   const [video, setVideo] = useState('');
   const [reviewer, setReviewer] = useState('');
   const [duration, setDuration] = useState('');
+  const [durationNote] = useDurationFromFile(file, setDuration);
   const [free, setFree] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [corrProgress, setCorrProgress] = useState<number | null>(null);
@@ -369,7 +547,7 @@ function PublishPaper({
             />
             <small>Laisse vide pour utiliser « {suggested || '…'} ».</small>
           </div>
-          <DurationField value={duration} onChange={setDuration} />
+          <DurationField value={duration} onChange={setDuration} note={durationNote} />
           <div className="field">
             <label>Accès</label>
             <label className="adm-toggle">
@@ -774,9 +952,27 @@ function EditPaper({
   );
   const [free, setFree] = useState(paper.is_premium === false);
   const [file, setFile] = useState<File | null>(null);
+  const [durationNote, setDurationNote] = useDurationFromFile(file, setDuration);
+  const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const options = subjectsForClass(subjects, classCode, paper.subject_id);
+  const readOnline = async () => {
+    setReading(true);
+    try {
+      const minutes = await readDuration(paperFileUrl(paper.id));
+      if (minutes) {
+        setDuration(String(minutes));
+        setDurationNote(
+          `Lue sur le sujet : ${formatDuration(minutes)}. Enregistre pour la garder.`
+        );
+      } else setDurationNote(NOT_FOUND_NOTE);
+    } catch {
+      setDurationNote('Lecture impossible pour l’instant : réessaie, ou saisis la durée.');
+    } finally {
+      setReading(false);
+    }
+  };
   const save = async () => {
     setBusy(true);
     try {
@@ -854,7 +1050,13 @@ function EditPaper({
           <label>Titre</label>
           <input className="input" value={title} onChange={e => setTitle(e.target.value)} />
         </div>
-        <DurationField value={duration} onChange={setDuration} />
+        <DurationField
+          value={duration}
+          onChange={setDuration}
+          note={durationNote}
+          onRead={paper.paper_url && !file ? readOnline : undefined}
+          reading={reading}
+        />
         <div className="field">
           <label>Accès</label>
           <label className="adm-toggle">

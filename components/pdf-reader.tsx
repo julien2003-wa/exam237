@@ -183,6 +183,71 @@ async function offlineData(url: string): Promise<ArrayBuffer | null> {
   }
 }
 
+// Cherche une information dans le texte des premières pages d'un PDF (admin : la durée écrite
+// en haut d'un sujet), page après page. Pour un fichier en ligne, seuls les morceaux utiles
+// sont téléchargés. Un PDF scanné (des photos) n'a pas de texte : le résultat est alors null.
+export async function findInPdf<T>(
+  source: File | string,
+  maxPages: number,
+  test: (pageText: string) => T | null
+): Promise<T | null> {
+  const lib = await loadPdfjs();
+  const base = `/pdfjs/${lib.version}/`;
+  const common = {
+    wasmUrl: `${base}wasm/`,
+    standardFontDataUrl: `${base}standard_fonts/`,
+    isEvalSupported: false,
+    enableXfa: false,
+  };
+  let task: any;
+  if (typeof source !== 'string') {
+    task = lib.getDocument({ ...common, data: new Uint8Array(await source.arrayBuffer()) });
+  } else {
+    const size = await fileSize(source);
+    if (size && size > SMALL_FILE) {
+      const first = await fetchRange(source, 0, CHUNK - 1);
+      const transport = new lib.PDFDataRangeTransport(size, first);
+      transport.requestDataRange = (begin: number, end: number) => {
+        fetchRange(source, begin, end - 1)
+          .then(chunk => transport.onDataRange(begin, chunk))
+          .catch(() => task?.destroy?.());
+      };
+      task = lib.getDocument({
+        ...common,
+        range: transport,
+        rangeChunkSize: CHUNK,
+        disableAutoFetch: true,
+        disableStream: true,
+      });
+    } else {
+      task = lib.getDocument({
+        ...common,
+        url: source,
+        rangeChunkSize: CHUNK,
+        disableAutoFetch: true,
+        disableStream: true,
+      });
+    }
+  }
+  try {
+    const pdf = await task.promise;
+    for (let n = 1; n <= Math.min(maxPages, pdf.numPages); n++) {
+      const page = await pdf.getPage(n);
+      const content = await page.getTextContent();
+      const text = content.items
+        .map((item: any) => `${item.str || ''}${item.hasEOL ? '\n' : ' '}`)
+        .join('');
+      const found = test(text);
+      if (found !== null && found !== undefined) return found;
+    }
+    return null;
+  } finally {
+    try {
+      task.destroy();
+    } catch {}
+  }
+}
+
 function formatLeft(ms: number) {
   const total = Math.max(0, Math.round(ms / 1000));
   const h = Math.floor(total / 3600);

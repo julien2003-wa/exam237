@@ -24,6 +24,13 @@ const UPLOAD_RULES = [
     max: MAX_VIDEO_BYTES,
     kind: 'vidéo',
   },
+  {
+    // Image d'une vidéo (statut), créée dans le navigateur de l'admin.
+    path: /^exam237\/poster\/[A-Za-z0-9._-]{1,160}\.(jpg|webp)$/,
+    types: ['image/jpeg', 'image/webp'],
+    max: 3 * 1024 * 1024,
+    kind: 'image',
+  },
 ];
 const fail = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
 
@@ -106,18 +113,28 @@ async function resolveTarget(
   if (!viewer) return fail('Non connecté.', 401);
   const kind = req.nextUrl.searchParams.get('kind');
   const id = String(req.nextUrl.searchParams.get('id') || '');
-  if (!isUuid(id) || !['paper', 'correction', 'promo'].includes(String(kind)))
+  if (!isUuid(id) || !['paper', 'correction', 'promo', 'poster'].includes(String(kind)))
     return fail('Fichier invalide.');
   const sql = db();
   const isAdmin = viewer.role === 'admin';
   if (!isAdmin && !isActiveStudent(viewer)) return fail('Compte non actif.', 403);
 
-  if (kind === 'promo') {
+  if (kind === 'promo' || kind === 'poster') {
     await ensureSchema();
     const rows: any[] =
-      await sql`SELECT video_path,kind,audience,active FROM ex237_promos WHERE id=${id} LIMIT 1`;
+      await sql`SELECT video_path,poster_path,kind,audience,active FROM ex237_promos WHERE id=${id} LIMIT 1`;
     const promo = rows[0];
     if (!promo || (!isAdmin && !promo.active)) return fail('Vidéo introuvable.', 404);
+    if (kind === 'poster')
+      return {
+        viewer,
+        target: {
+          pathname: promo.poster_path,
+          fallbackType: 'image/jpeg',
+          // L'adresse change avec l'image (« v= ») : elle peut rester en cache.
+          cache: 'private, max-age=31536000, immutable',
+        },
+      };
     return {
       viewer,
       target: {
@@ -242,7 +259,9 @@ function checkUpload(
       error:
         rule.kind === 'PDF'
           ? 'seuls les PDF sont acceptés.'
-          : 'choisis une vidéo MP4, WebM ou MOV.',
+          : rule.kind === 'image'
+            ? 'image JPEG ou WebP attendue.'
+            : 'choisis une vidéo MP4, WebM ou MOV.',
     };
   if (typeof size === 'number' && size <= 0) return { error: 'le fichier est vide.' };
   if (typeof size === 'number' && size > rule.max)

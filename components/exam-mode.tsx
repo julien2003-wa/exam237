@@ -1,9 +1,14 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { formatDuration } from '@/lib/durations';
 import { Icon } from './icons';
 import { readLocal, writeLocal, type Paper } from './lib';
 
 const KEY = 'exam237-mode-examen';
+// Sans durée connue : 2 h, et l'élève règle selon la durée écrite en haut du sujet.
+const DEFAULT_MINUTES = 120;
+const STEP = 15;
+const MAX_MINUTES = 360;
 
 type Run = { paperId: string; startedAt: number; minutes: number };
 
@@ -33,7 +38,9 @@ export default function ExamMode({
   const [run, setRun] = useState<Run | null>(null);
   const [now, setNow] = useState(Date.now());
   const [finished, setFinished] = useState(false);
-  const minutes = paper.durationMinutes || 120;
+  const preset = paper.durationMinutes || null;
+  const [minutes, setMinutes] = useState(preset || DEFAULT_MINUTES);
+  useEffect(() => setMinutes(preset || DEFAULT_MINUTES), [paper.id, preset]);
 
   // Le chrono continue pendant que l'élève lit le sujet (il est gardé sur le téléphone).
   useEffect(() => {
@@ -83,6 +90,44 @@ export default function ExamMode({
       {!run ? (
         <>
           <div className="timer">{format(minutes * 60000)}</div>
+          <div className="exam-adjust" role="group" aria-label="Régler la durée">
+            <button
+              type="button"
+              onClick={() => setMinutes(m => Math.max(STEP, m - STEP))}
+              disabled={minutes <= STEP}
+              aria-label="Retirer 15 minutes"
+            >
+              − 15 min
+            </button>
+            <button
+              type="button"
+              onClick={() => setMinutes(m => Math.min(MAX_MINUTES, m + STEP))}
+              disabled={minutes >= MAX_MINUTES}
+              aria-label="Ajouter 15 minutes"
+            >
+              + 15 min
+            </button>
+          </div>
+          <p className="exam-duration" aria-live="polite">
+            {!preset ? (
+              <>
+                Durée non indiquée : <b>2 h</b> par défaut. Vérifie la durée écrite en haut du
+                sujet, puis règle le chrono.
+              </>
+            ) : minutes === preset ? (
+              <>
+                Durée de l’épreuve : <b>{formatDuration(preset)}</b>.
+              </>
+            ) : (
+              <>
+                Durée de l’épreuve : {formatDuration(preset)}. Tu as choisi{' '}
+                <b>{formatDuration(minutes)}</b>.{' '}
+                <button type="button" className="exam-reset" onClick={() => setMinutes(preset)}>
+                  Remettre {formatDuration(preset)}
+                </button>
+              </>
+            )}
+          </p>
           <p>
             Compose comme le jour de l’examen : pas de cours, pas de téléphone. Le chrono démarre et
             le sujet s’ouvre. À la fin, compare avec la correction.

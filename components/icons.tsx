@@ -99,6 +99,19 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   play: <path d="M8 5v14l11-7z" fill="currentColor" stroke="none" />,
+  pause: <path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor" stroke="none" />,
+  volume: (
+    <>
+      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" stroke="none" />
+      <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />
+    </>
+  ),
+  volumeOff: (
+    <>
+      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" stroke="none" />
+      <path d="M17 9.5l5 5M22 9.5l-5 5" />
+    </>
+  ),
   cap: (
     <>
       <path d="M2 9l10-5 10 5-10 5z" />

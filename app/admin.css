@@ -778,3 +778,84 @@ button.adm-card:hover {
   background: #16a34a;
   vertical-align: 1px;
 }
+
+/* Durée de l'épreuve : saisie + lecture sur le PDF */
+.adm-duration {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.adm-duration .input {
+  flex: 1;
+  min-width: 0;
+}
+.adm-duration .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.adm-durations-run {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--green-50);
+  font-size: 0.85rem;
+}
+.adm-durations-run p {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-durations-result {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.adm-durations-result p {
+  margin: 0;
+}
+.adm-durations-result ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted, #5b6b63);
+}
+
+/* Images des vidéos (statuts) */
+.adm-thumb {
+  width: 44px;
+  height: 64px;
+  flex: none;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #000;
+}
+.adm-thumb + .adm-item-title {
+  flex: 1;
+}
+.adm-poster-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.adm-poster-preview img {
+  width: 54px;
+  height: 80px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #000;
+}
+.adm-posters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}

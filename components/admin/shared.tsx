@@ -84,6 +84,12 @@ async function sendFile(
   }
 }
 
+// Image d'une vidéo (statut), créée dans le navigateur. Renvoie le pathname à enregistrer.
+export async function uploadPoster(image: Blob) {
+  const file = new File([image], 'image.jpg', { type: 'image/jpeg' });
+  return sendFile(`exam237/poster/${Date.now()}-image.jpg`, file, 'image/jpeg', 'de l’image');
+}
+
 export async function uploadPdf(
   file: File,
   kind: 'paper' | 'correction',

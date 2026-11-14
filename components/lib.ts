@@ -52,11 +52,17 @@ export type Promo = {
   kind: 'own' | 'partner';
   title: string;
   videoUrl: string | null;
+  // Image de la vidéo : affichée tout de suite (ronds de l'accueil, ouverture du statut).
+  posterUrl: string | null;
   youtubeId: string | null;
   ctaType: 'none' | 'premium' | 'whatsapp' | 'link';
   ctaLabel: string | null;
   ctaUrl: string | null;
+  createdAt?: string | null;
 };
+
+// Un statut vient d'être vu : l'accueil passe son rond au gris tout de suite.
+export const SEEN_EVENT = 'exam237-statut-vu';
 
 export type Site = {
   whatsapp: string;

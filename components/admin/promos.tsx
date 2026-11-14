@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../icons';
+import { videoPoster } from './poster';
 import {
   Badge,
   formatDate,
   MAX_VIDEO_MB,
   Progress,
   Section,
+  uploadPoster,
   uploadVideo,
   type Act,
   type Notify,
@@ -78,6 +80,91 @@ function draftOf(promo: any): Draft {
   };
 }
 
+const posterSrc = (promo: any) =>
+  `/api/files?kind=poster&id=${encodeURIComponent(promo.id)}&v=${encodeURIComponent(
+    String(promo.poster_path).slice(-24)
+  )}`;
+
+// Image de la vidéo choisie (miniature du statut) : préparée dès le choix du fichier, avec un
+// aperçu dans le formulaire. `pending` permet d'attendre la fin si l'on publie tout de suite.
+function usePoster(file: File | null) {
+  const [poster, setPoster] = useState<string | null>(null);
+  const [making, setMaking] = useState(false);
+  const pending = useRef<Promise<Blob | null>>(Promise.resolve(null));
+  useEffect(() => {
+    setPoster(null);
+    pending.current = Promise.resolve(null);
+    if (!file) return;
+    let live = true;
+    let url = '';
+    setMaking(true);
+    pending.current = videoPoster(file);
+    pending.current
+      .then(blob => {
+        if (!live || !blob) return;
+        url = URL.createObjectURL(blob);
+        setPoster(url);
+      })
+      .finally(() => live && setMaking(false));
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [file]);
+  return { poster, making, pending };
+}
+
+// Envoie l'image préparée ; sans image (format illisible), le statut garde le logo.
+async function sendPoster(pending: Promise<Blob | null>) {
+  const blob = await pending.catch(() => null);
+  return blob ? uploadPoster(blob).catch(() => null) : null;
+}
+
+// Vidéos publiées avant l'arrivée des images : l'image est créée depuis la vidéo en ligne.
+function MissingPosters({ promos, act, notify }: { promos: any[]; act: Act; notify: Notify }) {
+  const missing = promos.filter(p => p.video_path && !p.poster_path);
+  const [progress, setProgress] = useState<string | null>(null);
+  if (!missing.length && !progress) return null;
+  const run = async () => {
+    let made = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < missing.length; i++) {
+      const promo = missing[i];
+      setProgress(`Image ${i + 1} / ${missing.length} : ${promo.title}…`);
+      const blob = await videoPoster(`/api/files?kind=promo&id=${encodeURIComponent(promo.id)}`);
+      const posterPath = blob ? await uploadPoster(blob).catch(() => null) : null;
+      const saved =
+        posterPath && (await act({ action: 'set_promo_poster', id: promo.id, posterPath }, ''));
+      if (saved) made++;
+      else failed.push(promo.title);
+    }
+    setProgress(null);
+    if (made) notify(`Image créée pour ${made} vidéo${made > 1 ? 's' : ''}.`);
+    if (failed.length)
+      notify(
+        `Image impossible pour : ${failed.join(', ')}. Ce navigateur ne sait pas lire ce format de vidéo.`,
+        'error'
+      );
+  };
+  return (
+    <div className="adm-note warn adm-posters">
+      {progress ? (
+        <span aria-live="polite">{progress}</span>
+      ) : (
+        <>
+          <span>
+            {missing.length} vidéo{missing.length > 1 ? 's n’ont' : ' n’a'} pas encore d’image : sur
+            l’accueil, le rond affiche le logo.
+          </span>
+          <button type="button" className="btn btn-light btn-sm" onClick={run}>
+            Créer {missing.length > 1 ? 'les images' : 'l’image'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function statusOf(promo: any): { label: string; tone: 'green' | 'gold' | 'grey' | 'red' | 'blue' } {
   const now = Date.now();
   if (!promo.active) return { label: 'Désactivée', tone: 'grey' };
@@ -96,9 +183,12 @@ export default function Promos({ data, act, notify }: { data: any; act: Act; not
   return (
     <div className="adm-stack">
       <p className="adm-note">
-        Elles apparaissent en haut de l’accueil, comme les statuts WhatsApp, et ne se lancent que si
-        l’élève les touche. Les vidéos <b>Partenaire</b> ne sont pas montrées aux membres Premium.
+        Elles apparaissent en haut de l’accueil, comme les statuts WhatsApp : l’élève touche un
+        rond, l’image s’affiche et la vidéo démarre tout de suite. Les vidéos <b>Partenaire</b> ne
+        sont pas montrées aux membres Premium, et le bouton «&nbsp;Passer Premium&nbsp;» est caché
+        aux élèves déjà Premium.
       </p>
+      <MissingPosters promos={promos} act={act} notify={notify} />
       <PromoForm groups={groups} act={act} notify={notify} />
       <Section title="Vidéos" count={`${live} en ligne / ${promos.length}`}>
         <div className="adm-list">
@@ -128,6 +218,8 @@ function PromoFields({
   setFile,
   progress,
   editing,
+  poster,
+  making,
 }: {
   draft: Draft;
   setDraft: (d: Draft) => void;
@@ -136,6 +228,8 @@ function PromoFields({
   setFile: (f: File | null) => void;
   progress: number | null;
   editing?: boolean;
+  poster?: string | null;
+  making?: boolean;
 }) {
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
   return (
@@ -217,6 +311,18 @@ function PromoFields({
                   ? 'Laisse vide pour garder la vidéo actuelle.'
                   : `MP4 conseillé, format vertical, 15 à 30 secondes, ${MAX_VIDEO_MB} Mo maximum.`}
             </small>
+            {file ? (
+              <div className="adm-poster-preview">
+                {poster ? <img src={poster} alt="Image de la vidéo" /> : null}
+                <small>
+                  {poster
+                    ? 'Image affichée sur l’accueil et à l’ouverture du statut.'
+                    : making
+                      ? 'Préparation de l’image de la vidéo…'
+                      : 'Image impossible avec ce format : le rond de l’accueil gardera le logo.'}
+                </small>
+              </div>
+            ) : null}
             <Progress value={progress} />
           </>
         ) : (
@@ -343,6 +449,7 @@ function payload(draft: Draft, videoPath: string | null) {
 function PromoForm({ groups, act, notify }: { groups: any[]; act: Act; notify: Notify }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [file, setFile] = useState<File | null>(null);
+  const { poster, making, pending } = usePoster(file);
   const [progress, setProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -355,12 +462,15 @@ function PromoForm({ groups, act, notify }: { groups: any[]; act: Act; notify: N
     setBusy(true);
     try {
       let videoPath: string | null = null;
+      let posterPath: string | null = null;
       if (draft.source === 'file' && file) {
         setProgress(0);
         videoPath = await uploadVideo(file, setProgress);
+        setProgress(null);
+        posterPath = await sendPoster(pending.current);
       }
       const r = await act(
-        { action: 'create_promo', ...payload(draft, videoPath) },
+        { action: 'create_promo', ...payload(draft, videoPath), posterPath },
         'Vidéo publiée sur l’accueil.'
       );
       if (r) {
@@ -386,6 +496,8 @@ function PromoForm({ groups, act, notify }: { groups: any[]; act: Act; notify: N
           file={file}
           setFile={setFile}
           progress={progress}
+          poster={poster}
+          making={making}
         />
         <div className="adm-form-actions">
           <button className="btn btn-primary" disabled={busy} onClick={save}>
@@ -420,6 +532,7 @@ function PromoCard({
   const [preview, setPreview] = useState(false);
   const [draft, setDraft] = useState<Draft>(() => draftOf(promo));
   const [file, setFile] = useState<File | null>(null);
+  const { poster, making, pending } = usePoster(file);
   const [progress, setProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const status = statusOf(promo);
@@ -443,11 +556,14 @@ function PromoCard({
     setBusy(true);
     try {
       let videoPath: string | null = null;
+      let posterPath: string | null = null;
       if (draft.source === 'file' && file) {
         setProgress(0);
         videoPath = await uploadVideo(file, setProgress);
+        setProgress(null);
+        posterPath = await sendPoster(pending.current);
       }
-      const body = payload(draft, videoPath);
+      const body = { ...payload(draft, videoPath), posterPath };
       // Fichier gardé tel quel : ni nouveau fichier, ni lien YouTube.
       if (draft.source === 'file' && !videoPath) body.youtubeUrl = null;
       const r = await act({ action: 'update_promo', id: promo.id, ...body }, 'Vidéo modifiée.');
@@ -466,6 +582,7 @@ function PromoCard({
   return (
     <article className="adm-item">
       <div className="adm-item-head">
+        {promo.poster_path ? <img className="adm-thumb" src={posterSrc(promo)} alt="" /> : null}
         <div className="adm-item-title">
           <b>{promo.title}</b>
           <span className="adm-sub">
@@ -536,6 +653,8 @@ function PromoCard({
             setFile={setFile}
             progress={progress}
             editing
+            poster={poster}
+            making={making}
           />
           <div className="adm-form-actions">
             <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>

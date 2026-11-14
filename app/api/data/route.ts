@@ -77,6 +77,17 @@ function youtubeId(url: string | null | undefined) {
   return m ? m[1] : null;
 }
 
+// Image d'un statut : celle créée à l'envoi de la vidéo (l'adresse change avec l'image, d'où le
+// « v= » qui permet de la garder longtemps en cache), sinon la miniature YouTube.
+const POSTER_PATH = /^exam237\/poster\/[A-Za-z0-9._-]{1,160}\.(jpg|webp)$/;
+function posterUrl(promoId: string, posterPath: string | null, youtube: string | null) {
+  if (posterPath) {
+    const version = crypto.createHash('sha1').update(posterPath).digest('hex').slice(0, 10);
+    return `/api/files?kind=poster&id=${encodeURIComponent(promoId)}&v=${version}`;
+  }
+  return youtube ? `https://i.ytimg.com/vi/${youtube}/hqdefault.jpg` : null;
+}
+
 function appUrl(req: NextRequest) {
   return String(process.env.APP_URL || req.nextUrl.origin).replace(/\/$/, '');
 }
@@ -228,6 +239,8 @@ async function studentBootstrap(viewer: Viewer) {
       warning: 'Ta classe n’est reliée à aucun groupe. Contacte Exam237.',
     });
 
+  // Colonnes récentes (image des statuts) : la mise à jour du schéma passe avant la lecture.
+  await ensureSchema();
   const [rows, free, rooms, resumeRows, promoRows] = await Promise.all([
     sql`
       SELECT p.id,p.class_code,c.label AS class_label,p.exam_year,p.session_label,p.title,p.duration_minutes,
@@ -249,7 +262,7 @@ async function studentBootstrap(viewer: Viewer) {
         JOIN ex237_papers p ON p.id=v.paper_id JOIN ex237_classes c ON c.code=p.class_code
         WHERE v.user_id=${viewer.userId} AND p.status='published' AND c.group_id=${viewer.groupId}
         ORDER BY v.viewed_at DESC LIMIT 1`,
-    sql`SELECT id,kind,title,video_path,youtube_url,cta_type,cta_label,cta_url,audience
+    sql`SELECT id,kind,title,video_path,poster_path,youtube_url,cta_type,cta_label,cta_url,audience,created_at
         FROM ex237_promos
         WHERE active=TRUE AND (starts_at IS NULL OR starts_at<=NOW()) AND (ends_at IS NULL OR ends_at>NOW())
           AND (group_id IS NULL OR group_id=${String(viewer.groupId)})
@@ -295,16 +308,21 @@ async function studentBootstrap(viewer: Viewer) {
   // gratuits ne sont pas montrées aux membres Premium.
   const promos = (promoRows as any[])
     .filter(p => !(premium && (p.kind === 'partner' || p.audience === 'free')))
-    .map(p => ({
-      id: p.id,
-      kind: p.kind === 'partner' ? 'partner' : 'own',
-      title: p.title,
-      videoUrl: p.video_path ? `/api/files?kind=promo&id=${encodeURIComponent(p.id)}` : null,
-      youtubeId: youtubeId(p.youtube_url),
-      ctaType: p.cta_type,
-      ctaLabel: p.cta_label || null,
-      ctaUrl: p.cta_url || null,
-    }))
+    .map(p => {
+      const youtube = youtubeId(p.youtube_url);
+      return {
+        id: p.id,
+        kind: p.kind === 'partner' ? 'partner' : 'own',
+        title: p.title,
+        videoUrl: p.video_path ? `/api/files?kind=promo&id=${encodeURIComponent(p.id)}` : null,
+        posterUrl: posterUrl(p.id, p.poster_path, youtube),
+        youtubeId: youtube,
+        ctaType: p.cta_type,
+        ctaLabel: p.cta_label || null,
+        ctaUrl: p.cta_url || null,
+        createdAt: p.created_at,
+      };
+    })
     .filter(p => p.videoUrl || p.youtubeId);
 
   const resume = (resumeRows as any[])[0]
@@ -841,6 +859,21 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
     return json({ ok: true });
   }
 
+  // Durées lues en haut des PDF depuis l'admin (chrono du mode examen).
+  if (action === 'set_paper_durations') {
+    const items = Array.isArray(body.items) ? body.items.slice(0, 500) : [];
+    let saved = 0;
+    for (const item of items) {
+      const paperId = str(item?.id);
+      const minutes = clampDuration(item?.minutes);
+      if (!isUuid(paperId) || !minutes) continue;
+      const rows =
+        await sql`UPDATE ex237_papers SET duration_minutes=${minutes},updated_at=NOW() WHERE id=${paperId} RETURNING id`;
+      if (rows[0]) saved++;
+    }
+    return json({ ok: true, saved });
+  }
+
   if (action === 'set_paper_status') {
     const status = str(body.status);
     if (!isUuid(id)) return fail('Sujet invalide.');
@@ -928,6 +961,7 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
     const title = str(body.title).slice(0, 80);
     const kind = body.kind === 'partner' ? 'partner' : 'own';
     const videoPath = str(body.videoPath) || null;
+    const posterPath = POSTER_PATH.test(str(body.posterPath)) ? str(body.posterPath) : null;
     const youtubeUrl = str(body.youtubeUrl) || null;
     const ctaType = ['none', 'premium', 'whatsapp', 'link'].includes(body.ctaType)
       ? body.ctaType
@@ -946,23 +980,40 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
     if (action === 'create_promo') {
       if (!videoPath && !youtubeUrl) return fail('Ajoute une vidéo ou un lien YouTube.');
       const promoId = crypto.randomUUID();
-      await sql`INSERT INTO ex237_promos(id,kind,title,video_path,youtube_url,cta_type,cta_label,cta_url,audience,group_id,starts_at,ends_at,display_order,active,created_at,updated_at)
-                VALUES(${promoId},${kind},${title},${videoPath},${youtubeUrl},${ctaType},${ctaLabel},${ctaUrl},${audience},${groupId},${startsAt},${endsAt ? `${endsAt}T23:59:59+01:00` : null},
+      await sql`INSERT INTO ex237_promos(id,kind,title,video_path,poster_path,youtube_url,cta_type,cta_label,cta_url,audience,group_id,starts_at,ends_at,display_order,active,created_at,updated_at)
+                VALUES(${promoId},${kind},${title},${videoPath},${videoPath ? posterPath : null},${youtubeUrl},${ctaType},${ctaLabel},${ctaUrl},${audience},${groupId},${startsAt},${endsAt ? `${endsAt}T23:59:59+01:00` : null},
                        COALESCE((SELECT MAX(display_order)+10 FROM ex237_promos),10),TRUE,NOW(),NOW())`;
       return json({ ok: true, id: promoId }, 201);
     }
 
     if (!isUuid(id)) return fail('Vidéo invalide.');
     const current: any[] =
-      await sql`SELECT video_path,youtube_url FROM ex237_promos WHERE id=${id} LIMIT 1`;
+      await sql`SELECT video_path,poster_path,youtube_url FROM ex237_promos WHERE id=${id} LIMIT 1`;
     if (!current[0]) return fail('Vidéo introuvable.', 404);
     const oldVideo = current[0].video_path as string | null;
+    const oldPoster = current[0].poster_path as string | null;
     const nextVideo = videoPath || (youtubeUrl ? null : oldVideo);
     const nextYoutube = videoPath ? null : youtubeUrl;
     if (!nextVideo && !nextYoutube) return fail('Garde une vidéo ou un lien YouTube.');
-    await sql`UPDATE ex237_promos SET kind=${kind},title=${title},video_path=${nextVideo},youtube_url=${nextYoutube},cta_type=${ctaType},cta_label=${ctaLabel},cta_url=${ctaUrl},
+    // Nouvelle vidéo : nouvelle image (ou aucune) ; même vidéo : l'image reste.
+    const nextPoster = !nextVideo ? null : videoPath ? posterPath : posterPath || oldPoster;
+    await sql`UPDATE ex237_promos SET kind=${kind},title=${title},video_path=${nextVideo},poster_path=${nextPoster},youtube_url=${nextYoutube},cta_type=${ctaType},cta_label=${ctaLabel},cta_url=${ctaUrl},
               audience=${audience},group_id=${groupId},starts_at=${startsAt},ends_at=${endsAt ? `${endsAt}T23:59:59+01:00` : null},updated_at=NOW() WHERE id=${id}`;
     if (oldVideo && oldVideo !== nextVideo) await deleteStored(oldVideo);
+    if (oldPoster && oldPoster !== nextPoster) await deleteStored(oldPoster);
+    return json({ ok: true });
+  }
+
+  // Image d'une vidéo déjà en ligne (créée depuis l'admin).
+  if (action === 'set_promo_poster') {
+    const posterPath = str(body.posterPath);
+    if (!isUuid(id) || !POSTER_PATH.test(posterPath)) return fail('Image invalide.');
+    const current: any[] =
+      await sql`SELECT poster_path FROM ex237_promos WHERE id=${id} AND video_path IS NOT NULL LIMIT 1`;
+    if (!current[0]) return fail('Vidéo introuvable.', 404);
+    await sql`UPDATE ex237_promos SET poster_path=${posterPath},updated_at=NOW() WHERE id=${id}`;
+    if (current[0].poster_path && current[0].poster_path !== posterPath)
+      await deleteStored(current[0].poster_path);
     return json({ ok: true });
   }
 
@@ -988,9 +1039,11 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
 
   if (action === 'delete_promo') {
     if (!isUuid(id)) return fail('Vidéo invalide.');
-    const rows: any[] = await sql`DELETE FROM ex237_promos WHERE id=${id} RETURNING video_path`;
+    const rows: any[] =
+      await sql`DELETE FROM ex237_promos WHERE id=${id} RETURNING video_path,poster_path`;
     if (!rows[0]) return fail('Vidéo introuvable.', 404);
     await deleteStored(rows[0].video_path);
+    await deleteStored(rows[0].poster_path);
     return json({ ok: true });
   }
 

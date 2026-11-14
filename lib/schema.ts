@@ -7,7 +7,7 @@ import { db } from './db';
   Une seule requête par démarrage d'instance une fois la base à jour.
 */
 
-const SCHEMA_VERSION = '6.1';
+const SCHEMA_VERSION = '6.2';
 
 let ready: Promise<void> | null = null;
 
@@ -27,13 +27,17 @@ async function addMissingColumns() {
   const wanted: Array<[table: string, column: string, type: string]> = [
     ['ex237_corrections', 'reviewer_name', 'TEXT'],
     ['ex237_papers', 'duration_minutes', 'INTEGER'],
+    // Image de la vidéo (statut) : affichée tout de suite, comme sur WhatsApp.
+    ['ex237_promos', 'poster_path', 'TEXT'],
   ];
   const rows: any[] = await sql`
     SELECT table_name,column_name FROM information_schema.columns
-    WHERE table_schema=current_schema() AND table_name IN ('ex237_corrections','ex237_papers')`;
+    WHERE table_schema=current_schema() AND table_name IN ('ex237_corrections','ex237_papers','ex237_promos')`;
   const existing = new Set(rows.map(r => `${r.table_name}.${r.column_name}`));
+  // Une table pas encore créée (base neuve) recevra la colonne à sa création, plus bas.
+  const tables = new Set(rows.map(r => r.table_name));
   for (const [table, column, type] of wanted) {
-    if (existing.has(`${table}.${column}`)) continue;
+    if (!tables.has(table) || existing.has(`${table}.${column}`)) continue;
     // Noms fixes ci-dessus (jamais issus d'une saisie) : la requête brute est sûre.
     await sql.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${type}`);
   }
@@ -153,6 +157,7 @@ async function migrate() {
     kind TEXT NOT NULL DEFAULT 'own',
     title TEXT NOT NULL,
     video_path TEXT,
+    poster_path TEXT,
     youtube_url TEXT,
     cta_type TEXT NOT NULL DEFAULT 'none',
     cta_label TEXT,

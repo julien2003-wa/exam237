@@ -6,6 +6,7 @@ import {
   daysLeft,
   frDate,
   readLocal,
+  SEEN_EVENT,
   subjectColor,
   subjectShort,
   timeAgo,
@@ -42,7 +43,10 @@ export default function HomeView({
     .toUpperCase();
   const [seen, setSeen] = useState<string[]>([]);
   useEffect(() => {
-    setSeen(readLocal<string[]>(SEEN_KEY, []));
+    const refresh = () => setSeen(readLocal<string[]>(SEEN_KEY, []));
+    refresh();
+    window.addEventListener(SEEN_EVENT, refresh);
+    return () => window.removeEventListener(SEEN_EVENT, refresh);
   }, [promos]);
 
   const subjects = useMemo(() => {
@@ -103,9 +107,11 @@ export default function HomeView({
                 >
                   <span className="story-ring">
                     <span
-                      className={`story-inner ${promo.kind === 'partner' ? 'partner' : promo.ctaType === 'premium' ? 'premium' : ''}`}
+                      className={`story-inner ${promo.posterUrl ? 'photo' : promo.kind === 'partner' ? 'partner' : promo.ctaType === 'premium' ? 'premium' : ''}`}
                     >
-                      {promo.kind === 'partner' ? (
+                      {promo.posterUrl ? (
+                        <img src={promo.posterUrl} alt="" decoding="async" />
+                      ) : promo.kind === 'partner' ? (
                         <Icon name="megaphone" size={26} />
                       ) : promo.ctaType === 'premium' ? (
                         <Icon name="star" size={26} />
