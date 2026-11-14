@@ -1,5 +1,5 @@
 // Fermeture du site par l'admin (bouton « Fermer le site » de l'administration).
-// Le réglage est rangé à part dans ex237_settings (clé « closure ») : l'enregistrement des
+// Le réglage est rangé à part dans ex237_settings (clé « site_closure ») : l'enregistrement des
 // autres réglages ne peut jamais le modifier. Le middleware le lit avant chaque page.
 // Ce fichier n'utilise aucun module Node : le middleware tourne dans l'environnement « edge ».
 import { db } from './db';
@@ -7,6 +7,8 @@ import { db } from './db';
 export type Closure = { closed: boolean; since: string | null };
 
 export const CLOSED_MESSAGE = 'Exam237 est fermé pour le moment.';
+// Clé « site_closure » depuis le 14/11 au soir : l'ancienne clé « closure » (site resté fermé) est ignorée.
+const KEY = 'site_closure';
 const OPEN: Closure = { closed: false, since: null };
 // Chaque serveur garde la valeur 10 secondes : le bouton agit partout en moins de 10 s.
 const FRESH_MS = 10_000;
@@ -24,7 +26,7 @@ function parse(raw: unknown): Closure {
 }
 
 async function read(): Promise<Closure> {
-  const rows: any[] = await db()`SELECT value FROM ex237_settings WHERE key='closure' LIMIT 1`;
+  const rows: any[] = await db()`SELECT value FROM ex237_settings WHERE key=${KEY} LIMIT 1`;
   const value = parse(rows[0]?.value);
   cache = { value, at: Date.now() };
   return value;
@@ -52,43 +54,17 @@ export async function setClosure(closed: boolean): Promise<Closure> {
   const current = await getClosure(true);
   if (closed && current.closed) return current; // déjà fermé : on garde l'heure de fermeture
   const value: Closure = closed ? { closed: true, since: new Date().toISOString() } : OPEN;
-  await db()`INSERT INTO ex237_settings(key,value,updated_at) VALUES('closure',${JSON.stringify(value)},NOW())
+  await db()`INSERT INTO ex237_settings(key,value,updated_at) VALUES(${KEY},${JSON.stringify(value)},NOW())
              ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
   cache = { value, at: Date.now() };
   return value;
-}
-
-/* ---------- Session admin (vérifiée sans les modules Node) ---------- */
-
-const adminSeen = new Map<string, number>();
-
-async function sha256Hex(value: string) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Jeton du cookie admin encore valable ? (même contrôle que lib/auth.ts, gardé 1 minute)
-export async function isAdminSession(raw: string | undefined): Promise<boolean> {
-  if (!raw) return false;
-  const hash = await sha256Hex(raw);
-  const until = adminSeen.get(hash);
-  if (until && until > Date.now()) return true;
-  try {
-    const rows: any[] =
-      await db()`SELECT 1 FROM jl_sessions WHERE token_hash=${hash} AND role='admin' AND expires_at>NOW() LIMIT 1`;
-    if (!rows[0]) return false;
-    if (adminSeen.size > 200) adminSeen.clear();
-    adminSeen.set(hash, Date.now() + 60_000);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /* ---------- Ce que voient les visiteurs et les élèves ---------- */
 
 // Page unique servie à la place de toutes les pages quand le site est fermé. Elle note aussi
 // la fermeture sur le téléphone : la page hors ligne de l'appli n'affiche alors plus rien.
+// Le petit lien du bas mène à l'administration (seul le compte admin peut s'y connecter).
 export function closedPage() {
   return `<!doctype html>
 <html lang="fr">
@@ -106,10 +82,12 @@ font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-sm
 main{padding:32px 24px}
 img{display:block;width:96px;height:96px;margin:0 auto;border-radius:24px;background:#fff;padding:8px;box-sizing:border-box}
 p{margin:22px 0 0;font-size:1.2rem;font-weight:650;line-height:1.4}
+a.admin{position:fixed;left:0;right:0;bottom:max(18px,env(safe-area-inset-bottom));color:rgba(255,255,255,.45);font-size:.8rem;text-decoration:none}
 </style>
 </head>
 <body>
 <main><img src="/logo.png" alt="Exam237" width="96" height="96"><p>${CLOSED_MESSAGE}</p></main>
+<a class="admin" href="/admin">Accès administrateur</a>
 <script>try{localStorage.setItem('exam237-ferme','1')}catch(e){}</script>
 </body>
 </html>`;

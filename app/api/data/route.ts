@@ -18,6 +18,7 @@ import {
   saveAssistantSettings,
   testAssistant,
 } from '@/lib/assistant';
+import { refuseIfClosed } from '@/lib/closure-guard';
 
 export const maxDuration = 60;
 
@@ -109,6 +110,8 @@ function friendlyDbError(e: any) {
    ========================================================================= */
 
 export async function GET(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const sql = db();
   const action = req.nextUrl.searchParams.get('action') || 'bootstrap';
 
@@ -535,6 +538,8 @@ async function adminChatReports() {
    ========================================================================= */
 
 export async function POST(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const viewer = await getViewer(req);
   if (!viewer || viewer.role !== 'admin') return fail('Non autorisé.', 403);
   let body: any = {};

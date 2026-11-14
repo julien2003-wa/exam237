@@ -22,6 +22,7 @@ import {
   tutorUsedToday,
   validTutorImage,
 } from '@/lib/assistant';
+import { refuseIfClosed } from '@/lib/closure-guard';
 
 // Le Prof IA peut prendre quelques secondes, surtout avec une photo.
 export const maxDuration = 60;
@@ -53,6 +54,8 @@ async function tutorAccess(viewer: Viewer) {
 }
 
 export async function GET(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const viewer = await studentOnly(req);
   if (viewer instanceof NextResponse) return viewer;
   const action = req.nextUrl.searchParams.get('action') || '';
@@ -76,6 +79,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const viewer = await studentOnly(req);
   if (viewer instanceof NextResponse) return viewer;
   let body: any = {};

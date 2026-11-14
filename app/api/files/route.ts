@@ -6,6 +6,7 @@ import { db, isUuid } from '@/lib/db';
 import { getViewer, isActiveStudent, type Viewer } from '@/lib/auth';
 import { canOpenPaper, isPremiumViewer } from '@/lib/access';
 import { ensureSchema } from '@/lib/schema';
+import { refuseIfClosed } from '@/lib/closure-guard';
 
 // Import direct navigateur → Vercel Blob : le fichier ne passe pas par la fonction
 // Vercel (limitée à 4,5 Mo par requête). Seule l'autorisation d'envoi est préparée ici.
@@ -198,6 +199,8 @@ async function resolveTarget(
 }
 
 export async function GET(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const resolved = await resolveTarget(req);
   if (resolved instanceof NextResponse) return resolved;
   const { viewer, target } = resolved;
@@ -211,6 +214,7 @@ export async function GET(req: NextRequest) {
 
 // Taille du fichier, affichée avant l'ouverture (économie de données). Ne compte pas de vue.
 export async function HEAD(req: NextRequest) {
+  if (await refuseIfClosed(req)) return new NextResponse(null, { status: 503 });
   const resolved = await resolveTarget(req);
   if (resolved instanceof NextResponse) return new NextResponse(null, { status: resolved.status });
   const { target } = resolved;
@@ -303,6 +307,8 @@ function storageMessage(e: unknown) {
 // « exam237.check-upload » vérifie d'abord tout (session, fichier, stockage) et renvoie la raison
 // exacte d'un refus : la bibliothèque de Vercel n'affiche qu'un message générique en anglais.
 export async function POST(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const viewer = await getViewer(req);
   if (!viewer || viewer.role !== 'admin')
     return fail('ta session admin a expiré. Reconnecte-toi, puis réessaie.', 403);

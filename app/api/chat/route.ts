@@ -23,6 +23,7 @@ import {
   runAssistant,
   type AssistantTrigger,
 } from '@/lib/assistant';
+import { refuseIfClosed } from '@/lib/closure-guard';
 
 // Laisse le temps à l'assistant de répondre après l'envoi du message (voir after()).
 export const maxDuration = 60;
@@ -111,6 +112,8 @@ async function reactionSummary(messageId: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const viewer = await getViewer(req);
   if (!viewer) return fail('Non connecté.', 401);
   const action = req.nextUrl.searchParams.get('action') || 'messages';
@@ -190,6 +193,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const closed = await refuseIfClosed(req);
+  if (closed) return closed;
   const viewer = await getViewer(req);
   if (!viewer) return fail('Non connecté.', 401);
   let body: any = {};
