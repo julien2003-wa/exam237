@@ -41,7 +41,9 @@ export async function getClosure(fresh = false): Promise<Closure> {
         reading = null;
       });
     return await reading;
-  } catch {
+  } catch (e) {
+    // Visible dans les journaux Vercel : sans lecture, le bouton « Fermer le site » ne s'appliquerait pas.
+    console.error('Fermeture du site : lecture du réglage impossible', e);
     return cache?.value ?? OPEN;
   }
 }
