@@ -21,6 +21,7 @@ import {
   recordRegistration,
   registerBlocked,
 } from '@/lib/security';
+import { CLOSED_MESSAGE, getClosure } from '@/lib/closure';
 
 function ok(data: Record<string, unknown> = {}) {
   return NextResponse.json({ ok: true, ...data });
@@ -28,6 +29,11 @@ function ok(data: Record<string, unknown> = {}) {
 function fail(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
+// Site fermé par l'admin : seul l'admin peut encore se connecter.
+function closed() {
+  return NextResponse.json({ error: CLOSED_MESSAGE, closed: true }, { status: 503 });
+}
+const isClosed = async () => (await getClosure(true)).closed;
 
 async function body(req: NextRequest) {
   try {
@@ -42,6 +48,7 @@ export async function GET(req: NextRequest) {
   if (action !== 'me') return fail('Action inconnue.', 404);
   const viewer = await getViewer(req);
   if (!viewer) return fail('Non connecté.', 401);
+  if (viewer.role !== 'admin' && (await isClosed())) return closed();
   return ok({ viewer });
 }
 
@@ -73,6 +80,7 @@ export async function POST(req: NextRequest) {
       return response;
     }
 
+    if (await isClosed()) return closed();
     const rows =
       await sql`SELECT id,email,password_hash,disabled_at FROM jl_users WHERE email=${email} LIMIT 1`;
     const user: any = rows[0];
@@ -89,6 +97,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'register') {
+    if (await isClosed()) return closed();
     const email = normalizeEmail(data.email);
     const password = String(data.password || '');
     const displayName = String(data.displayName || '')
@@ -133,6 +142,7 @@ export async function POST(req: NextRequest) {
 
   // Lien envoyé par l'admin (WhatsApp) pour choisir un nouveau mot de passe.
   if (action === 'reset-password') {
+    if (await isClosed()) return closed();
     const token = String(data.token || '');
     const password = String(data.password || '');
     if (password.length < 8) return fail('Le mot de passe doit contenir au moins 8 caractères.');

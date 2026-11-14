@@ -859,3 +859,60 @@ button.adm-card:hover {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* Site ouvert / fermé (bouton « Fermer le site », components/admin/site-access.tsx) */
+.adm-access {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+.adm-access-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--g7);
+  box-shadow: 0 0 0 4px rgba(12, 122, 94, 0.15);
+}
+.adm-access-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.adm-access-text b {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+.adm-access-text span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.adm-access .btn {
+  flex: none;
+}
+.adm-access.closed {
+  background: var(--red-soft);
+  border-color: #f3c5c5;
+}
+.adm-access.closed .adm-access-dot {
+  background: var(--red);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.18);
+}
+.adm-access.closed .adm-access-text b {
+  color: #a31818;
+}
+@media (prefers-color-scheme: dark) {
+  .adm-access.closed {
+    border-color: #6b2a2a;
+  }
+  .adm-access.closed .adm-access-text b {
+    color: #ff9a9a;
+  }
+}

@@ -1,5 +1,5 @@
 // Exam237 — service worker (application installable, page hors ligne).
-const CACHE = 'exam237-shell-v11';
+const CACHE = 'exam237-shell-v12';
 // Les sujets enregistrés par les élèves Premium : ne jamais les effacer lors d'une mise à jour.
 const KEEP = ['exam237-offline-v1'];
 const SHELL = ['/offline.html', '/logo.png', '/icons/icon-192.png', '/icons/icon-512.png'];

@@ -11,6 +11,7 @@ import Promos from './admin/promos';
 import Reports from './admin/reports';
 import Assistant from './admin/assistant';
 import Settings from './admin/settings';
+import SiteAccess from './admin/site-access';
 
 export type Pane =
   | 'dashboard'
@@ -111,6 +112,8 @@ export default function AdminView({ notify }: { notify: Notify }) {
           <span className="adm-hide-mobile">{refreshing ? 'Actualisation…' : 'Actualiser'}</span>
         </button>
       </div>
+
+      <SiteAccess closure={data.closure} act={act} />
 
       <div className="adm-tabs" role="tablist">
         {tabs.map(t => (

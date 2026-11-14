@@ -92,6 +92,13 @@ export async function api(url: string, opts?: RequestInit, timeoutMs = 20000) {
     const r = await fetch(url, { ...opts, cache: 'no-store', signal: controller.signal });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) {
+      // Site fermé par l'admin pendant que l'appli est ouverte : la page « fermé » s'affiche.
+      if (
+        r.status === 503 &&
+        d.closed &&
+        !/^\/(admin|connexion)(\/|$)/.test(window.location.pathname)
+      )
+        window.location.reload();
       const error: any = new Error(d.error || 'Une erreur est survenue.');
       error.status = r.status;
       error.data = d;

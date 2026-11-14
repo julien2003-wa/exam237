@@ -91,6 +91,12 @@ export default function ExamApp() {
       const d = await api('/api/data?action=bootstrap');
       setData(d);
     } catch (e: any) {
+      if (e?.data?.closed) {
+        // Site fermé : l'administration reste accessible après la connexion admin.
+        if (window.location.pathname.startsWith('/admin'))
+          router.replace('/connexion?next=%2Fadmin');
+        return;
+      }
       if (e?.status === 401) {
         clearReaderCache();
         // Un lien partagé (un sujet, le chat…) : on y revient après la connexion.

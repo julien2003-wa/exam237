@@ -1,9 +1,7 @@
 import crypto from 'node:crypto';
 import type { NextRequest, NextResponse } from 'next/server';
 import { db } from './db';
-
-const USER_COOKIE = 'ex237_user_session';
-const ADMIN_COOKIE = 'ex237_admin_session';
+import { ADMIN_COOKIE, USER_COOKIE } from './cookies';
 
 export type Viewer = {
   role: 'student' | 'admin';

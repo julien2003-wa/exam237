@@ -9,6 +9,7 @@ import { freePaperIds, isPremiumViewer } from '@/lib/access';
 import { decryptMessage } from '@/lib/crypto';
 import { publishRoomEvent, realtimeConfigured } from '@/lib/realtime';
 import { getSiteSettings, publicSettings, saveSiteSettings } from '@/lib/settings';
+import { getClosure, setClosure } from '@/lib/closure';
 import {
   assistantConfigured,
   assistantOverview,
@@ -358,6 +359,7 @@ async function adminOverview(viewer: Viewer) {
     promos,
     site,
     autoFree,
+    closure,
   ] = await Promise.all([
     sql`SELECT id,code,label,exam_type,display_order,active,created_at FROM ex237_groups ORDER BY display_order,label`,
     sql`SELECT c.code,c.label,c.exam_type,c.series,c.display_order,c.active,c.group_id,g.label AS group_label
@@ -405,6 +407,7 @@ async function adminOverview(viewer: Viewer) {
         SELECT DISTINCT ON (pub.group_id,pub.subject_id) pub.id::text AS id FROM pub
         WHERE NOT EXISTS (SELECT 1 FROM chosen ch WHERE ch.group_id IS NOT DISTINCT FROM pub.group_id AND ch.subject_id=pub.subject_id)
         ORDER BY pub.group_id,pub.subject_id,pub.has_correction DESC,pub.exam_year DESC,pub.created_at DESC`,
+    getClosure(true),
   ]);
 
   const now = Date.now();
@@ -451,6 +454,7 @@ async function adminOverview(viewer: Viewer) {
     users: mappedUsers,
     rooms,
     site,
+    closure,
     promos: (promos as any[]).map(p => ({ ...p, youtube_id: youtubeId(p.youtube_url) })),
     assistantConfigured: assistantConfigured(),
     realtimeConfigured: realtimeConfigured(),
@@ -557,6 +561,12 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
   if (action === 'save_site_settings') {
     const site = await saveSiteSettings(body.settings || {});
     return json({ ok: true, site });
+  }
+
+  // Bouton « Fermer le site » / « Rouvrir le site » (voir middleware.ts).
+  if (action === 'set_site_closed') {
+    const closure = await setClosure(body.closed === true);
+    return json({ ok: true, closure });
   }
 
   /* ---------- Élèves et Premium ---------- */
