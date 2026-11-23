@@ -17,7 +17,11 @@ import {
   clearTutorHistory,
   dailyLimitFor,
   getAssistantSettings,
+  hasAiConsent,
+  providerLabel,
+  reportTutorAnswer,
   runTutor,
+  saveAiConsent,
   tutorHistory,
   tutorUsedToday,
   validTutorImage,
@@ -50,7 +54,7 @@ async function paperOfGroup(paperId: string, groupId: string | null) {
 async function tutorAccess(viewer: Viewer) {
   const settings = await getAssistantSettings();
   const premium = isPremiumViewer(viewer);
-  return { premium, limit: dailyLimitFor(settings, premium) };
+  return { premium, limit: dailyLimitFor(settings, premium), premiumLimit: settings.dailyLimit };
 }
 
 export async function GET(req: NextRequest) {
@@ -62,15 +66,18 @@ export async function GET(req: NextRequest) {
 
   if (action === 'tutor') {
     const { premium, limit } = await tutorAccess(viewer);
-    const [messages, used] = await Promise.all([
+    const [messages, used, consent] = await Promise.all([
       tutorHistory(viewer.userId!),
       tutorUsedToday(viewer.userId!),
+      hasAiConsent(viewer.userId!),
     ]);
     return json({
       configured: assistantConfigured(),
+      provider: providerLabel(),
       premium,
       limit,
       used,
+      consent,
       messages,
     });
   }
@@ -196,10 +203,16 @@ export async function POST(req: NextRequest) {
 
   if (action === 'tutor_ask') {
     if (!assistantConfigured()) return fail('Le Prof IA n’est pas encore disponible.', 503);
-    const { premium, limit } = await tutorAccess(viewer);
+    const { premium, limit, premiumLimit } = await tutorAccess(viewer);
     if (limit <= 0)
       return json(
         { error: 'Le Prof IA est réservé aux membres Premium.', premiumRequired: true },
+        403
+      );
+    // Mistral exige l'accord des parents pour les mineurs : demandé avant la première question.
+    if (!(await hasAiConsent(userId)))
+      return json(
+        { error: 'Coche d’abord l’accord de ton parent ou tuteur.', consentRequired: true },
         403
       );
     const text = String(body.text || '')
@@ -215,12 +228,24 @@ export async function POST(req: NextRequest) {
       dailyLimit: limit,
       classLabel: viewer.classLabel,
       examType: viewer.examType,
+      free: !premium,
     });
     if (result.status === 'limited')
       return json(
         {
-          error: `Tu as utilisé tes ${limit} questions du jour. Reviens demain !`,
+          error: premium
+            ? `Tu as utilisé tes ${limit} questions du jour. Reviens demain !`
+            : `Tu as utilisé tes ${limit} questions gratuites du jour. Passe Premium pour en avoir ${premiumLimit} par jour, ou reviens demain.`,
           premiumRequired: !premium,
+        },
+        429
+      );
+    if (result.status === 'busy')
+      return json(
+        {
+          error:
+            'Le Prof IA gratuit a reçu beaucoup de questions aujourd’hui. Reviens demain, ou passe Premium pour continuer.',
+          premiumRequired: true,
         },
         429
       );
@@ -243,6 +268,20 @@ export async function POST(req: NextRequest) {
 
   if (action === 'tutor_clear') {
     await clearTutorHistory(userId);
+    return json({ ok: true });
+  }
+
+  // « Mon parent ou tuteur est d'accord » (élève mineur) ou « J'ai 18 ans ou plus ».
+  if (action === 'tutor_consent') {
+    if (body.kind !== 'parent' && body.kind !== 'adult') return fail('Choix invalide.');
+    await saveAiConsent(userId, body.kind);
+    return json({ ok: true, consent: true });
+  }
+
+  if (action === 'tutor_report') {
+    const messageId = String(body.messageId || '');
+    if (!isUuid(messageId)) return fail('Réponse introuvable.', 404);
+    if (!(await reportTutorAnswer(userId, messageId))) return fail('Réponse introuvable.', 404);
     return json({ ok: true });
   }
 

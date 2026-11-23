@@ -71,10 +71,10 @@ export default function Dashboard({
     },
     {
       ok: !!data.assistantConfigured,
-      label: 'Prof IA et assistant (Claude)',
+      label: 'Prof IA et assistant',
       help: data.assistantConfigured
-        ? 'La clé ANTHROPIC_API_KEY est en place.'
-        : 'Ajoute ANTHROPIC_API_KEY dans Vercel.',
+        ? `IA branchée : ${data.assistantProvider || 'oui'}.`
+        : 'Ajoute la clé MISTRAL_API_KEY (gratuite) dans Vercel.',
       pane: 'assistant',
     },
     {

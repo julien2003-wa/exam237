@@ -17,6 +17,8 @@ import {
   assistantOverview,
   dailyLimitFor,
   getAssistantSettings,
+  providerLabel,
+  resolveAiReport,
   saveAssistantSettings,
   testAssistant,
 } from '@/lib/assistant';
@@ -440,6 +442,7 @@ async function adminOverview(viewer: Viewer) {
     closure,
     promos: (promos as any[]).map(p => ({ ...p, youtube_id: youtubeId(p.youtube_url) })),
     assistantConfigured: assistantConfigured(),
+    assistantProvider: providerLabel(),
     realtimeConfigured: realtimeConfigured(),
     // Branchement récent du stockage : BLOB_STORE_ID (le site s'identifie tout seul) ; ancien : une clé.
     blobConfigured: !!(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN),
@@ -1109,14 +1112,23 @@ async function adminAction(req: NextRequest, action: string, body: any): Promise
       mode: body.mode,
       dailyLimit: body.dailyLimit,
       freeDailyLimit: body.freeDailyLimit,
+      freeGlobalDailyLimit: body.freeGlobalDailyLimit,
     });
     return json({ ok: true, settings });
+  }
+
+  // Réponse du Prof IA signalée par un élève : l'admin l'a lue.
+  if (action === 'ai_report_resolve') {
+    if (!isUuid(id)) return fail('Signalement introuvable.', 404);
+    await resolveAiReport(id);
+    return json({ ok: true });
   }
 
   if (action === 'assistant_test') {
     const question = str(body.question).slice(0, 1000);
     if (question.length < 3) return fail('Écris une question à tester.');
-    if (!assistantConfigured()) return fail('Ajoute d’abord ANTHROPIC_API_KEY dans Vercel.', 409);
+    if (!assistantConfigured())
+      return fail('Ajoute d’abord la clé MISTRAL_API_KEY (gratuite) dans Vercel.', 409);
     try {
       const result = await testAssistant(question, str(body.groupLabel) || null);
       return json({ ok: true, ...result });

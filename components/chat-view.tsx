@@ -573,6 +573,10 @@ export default function ChatView({
         notify('L’assistant IA est réservé aux membres Premium.');
         onPremium();
       }
+      if (d.assistantBlocked === 'consent')
+        notify(
+          'Pour parler à l’assistant IA, ouvre d’abord le Prof IA et coche l’accord de ton parent ou tuteur.'
+        );
     } catch (e: any) {
       setMessages(cur => cur.map(m => (m.id === temp.id ? { ...m, status: 'failed' } : m)));
       notify(e.message || 'Message non envoyé. Touche-le pour réessayer.', 'error');

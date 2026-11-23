@@ -26,6 +26,7 @@ const STATUS: Record<string, { label: string; tone: 'green' | 'gold' | 'red' | '
     pending: { label: 'En cours', tone: 'blue' },
     error: { label: 'Erreur', tone: 'red' },
     limited: { label: 'Limite atteinte', tone: 'gold' },
+    busy: { label: 'Plafond gratuit atteint', tone: 'gold' },
     skipped: { label: 'Ignoré', tone: 'grey' },
   };
 
@@ -54,7 +55,8 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState('mention');
   const [limit, setLimit] = useState(30);
-  const [freeLimit, setFreeLimit] = useState(0);
+  const [freeLimit, setFreeLimit] = useState(3);
+  const [freeCap, setFreeCap] = useState(200);
   const [saving, setSaving] = useState(false);
   const [question, setQuestion] = useState('');
   const [groupLabel, setGroupLabel] = useState('');
@@ -69,6 +71,7 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
       setMode(d.settings?.mode || 'mention');
       setLimit(d.settings?.dailyLimit || 30);
       setFreeLimit(Number(d.settings?.freeDailyLimit) || 0);
+      setFreeCap(Number(d.settings?.freeGlobalDailyLimit) || 0);
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -81,7 +84,13 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
   const save = async () => {
     setSaving(true);
     const r = await act(
-      { action: 'assistant_settings', mode, dailyLimit: limit, freeDailyLimit: freeLimit },
+      {
+        action: 'assistant_settings',
+        mode,
+        dailyLimit: limit,
+        freeDailyLimit: freeLimit,
+        freeGlobalDailyLimit: freeCap,
+      },
       'Réglages de l’assistant enregistrés.'
     );
     setSaving(false);
@@ -114,32 +123,35 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
         <article className="card adm-section">
           <div className="adm-section-body" style={{ paddingTop: 14 }}>
             <p className="adm-note warn">
-              <b>L’assistant n’est pas encore branché.</b> Il lui faut une clé API Claude (payante à
-              l’usage, de l’ordre de quelques dixièmes de centime par réponse avec le modèle Haiku).
+              <b>L’assistant n’est pas encore branché.</b> Il lui faut une clé de Mistral AI
+              (formule gratuite, sans carte bancaire).
             </p>
             <ol className="adm-sub" style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
               <li>
                 Sur{' '}
                 <a
                   className="text-link"
-                  href="https://platform.claude.com/settings/keys"
+                  href="https://console.mistral.ai"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  platform.claude.com/settings/keys
+                  console.mistral.ai
                 </a>
-                , clique « Create key », rattache-la à un espace de travail (workspace) et copie la
-                clé (elle commence par sk-ant-).
+                , crée ton compte (formule gratuite), puis une clé dans « API Keys » et copie-la.
               </li>
               <li>
-                Dans la Console, vérifie la facturation (Billing) pour que la clé puisse être
-                utilisée.
+                Dans Admin › Privacy, coupe « Anonymous improvement data » : les questions des élèves
+                ne serviront pas à entraîner les modèles de Mistral.
               </li>
               <li>
                 Dans Vercel : ton projet → Settings → Environment Variables → ajoute{' '}
-                <b>ANTHROPIC_API_KEY</b> (Production et Preview), puis redéploie.
+                <b>MISTRAL_API_KEY</b> (Production et Preview), puis redéploie.
               </li>
             </ol>
+            <p className="adm-sub" style={{ margin: 0 }}>
+              Plus tard, si tu ajoutes une clé ANTHROPIC_API_KEY (Claude, payant), elle passe avant
+              Mistral.
+            </p>
           </div>
         </article>
       ) : null}
@@ -150,6 +162,15 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
         <div className="adm-stat">
           <b>{stats.day ?? '—'}</b>
           <small>questions (24 h)</small>
+        </div>
+        <div className="adm-stat">
+          <b>
+            {stats.dayFree ?? '—'}
+            {overview?.settings?.freeGlobalDailyLimit
+              ? ` / ${overview.settings.freeGlobalDailyLimit}`
+              : ''}
+          </b>
+          <small>gratuites (24 h)</small>
         </div>
         <div className="adm-stat">
           <b>{stats.week ?? '—'}</b>
@@ -177,7 +198,9 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
         title="Réglages"
         actions={
           <Badge tone={configured ? 'green' : 'gold'}>
-            {configured ? `Clé OK · ${overview?.model || '…'}` : 'Clé manquante'}
+            {configured
+              ? `${overview?.providerLabel || 'IA'} · ${overview?.model || '…'}`
+              : 'Clé manquante'}
           </Badge>
         }
       >
@@ -223,8 +246,22 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
               value={freeLimit}
               onChange={e => setFreeLimit(Number(e.target.value))}
             />
+            <small>0 = Prof IA et assistant réservés au Premium. 3 = un bon avant-goût.</small>
+          </div>
+          <div className="field">
+            <label>Plafond par jour · tous les comptes gratuits</label>
+            <input
+              className="input"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={5000}
+              value={freeCap}
+              onChange={e => setFreeCap(Number(e.target.value))}
+            />
             <small>
-              0 = Prof IA et assistant réservés au Premium (conseillé). 1 ou 2 = un avant-goût.
+              Total des questions gratuites sur 24 h. Au-delà, les comptes gratuits reviennent le
+              lendemain ; les Premium continuent. 0 = sans plafond.
             </small>
           </div>
         </div>
@@ -277,6 +314,47 @@ export default function Assistant({ data, act, notify }: { data: any; act: Act; 
             </span>
           </div>
         ) : null}
+      </Section>
+
+      <Section title="Réponses signalées" count={overview?.reports?.length ?? 0}>
+        <p className="adm-note">
+          Réponses du Prof IA qu’un élève a signalées (fausses ou gênantes). Lis-les, puis marque-les
+          comme lues.
+        </p>
+        <div className="adm-list">
+          {(overview?.reports || []).map((r: any) => (
+            <article key={r.id} className="adm-item">
+              <div className="adm-item-head">
+                <div className="adm-item-title">
+                  <b>{r.studentName}</b>
+                  <span className="adm-sub">{formatDate(r.createdAt, true)}</span>
+                </div>
+                <Badge tone="red">Signalée</Badge>
+              </div>
+              {r.question ? <blockquote className="adm-quote">{r.question}</blockquote> : null}
+              <blockquote className="adm-quote green">
+                {r.answer || 'Réponse effacée par l’élève.'}
+              </blockquote>
+              <div className="adm-actions">
+                <button
+                  className="btn btn-light btn-sm"
+                  onClick={async () => {
+                    const ok = await act(
+                      { action: 'ai_report_resolve', id: r.id },
+                      'Signalement marqué comme lu.'
+                    );
+                    if (ok) load();
+                  }}
+                >
+                  Marquer comme lu
+                </button>
+              </div>
+            </article>
+          ))}
+          {overview && !overview.reports?.length ? (
+            <div className="adm-empty">Aucune réponse signalée.</div>
+          ) : null}
+        </div>
       </Section>
 
       <Section

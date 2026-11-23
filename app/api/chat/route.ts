@@ -20,6 +20,7 @@ import {
   dailyLimitFor,
   detectAssistantTrigger,
   getAssistantSettings,
+  hasAiConsent,
   runAssistant,
   type AssistantTrigger,
 } from '@/lib/assistant';
@@ -50,9 +51,10 @@ function scheduleAssistant(
   questionId: string,
   userId: string | null,
   trigger: AssistantTrigger,
-  dailyLimit?: number
+  dailyLimit?: number,
+  free?: boolean
 ) {
-  inBackground(() => runAssistant({ roomId, questionId, userId, trigger, dailyLimit }));
+  inBackground(() => runAssistant({ roomId, questionId, userId, trigger, dailyLimit, free }));
 }
 
 async function roomForStudent(groupId: string) {
@@ -296,8 +298,11 @@ export async function POST(req: NextRequest) {
           // Le mode automatique ne répond qu'aux membres Premium.
         } else if (limit <= 0) {
           assistantBlocked = 'premium';
+        } else if (!(await hasAiConsent(viewer.userId!))) {
+          // Accord des parents pas encore donné (demandé dans le Prof IA) : l'assistant ne répond pas.
+          if (trigger !== 'auto') assistantBlocked = 'consent';
         } else {
-          scheduleAssistant(roomId, id, viewer.userId, trigger, limit);
+          scheduleAssistant(roomId, id, viewer.userId, trigger, limit, !premium);
           assistantTriggered = trigger !== 'auto';
         }
       }
@@ -435,7 +440,7 @@ export async function POST(req: NextRequest) {
   // L'admin demande à l'assistant de répondre à n'importe quel message du chat.
   if (action === 'assistant_reply') {
     if (!assistantConfigured())
-      return fail('Assistant non configuré : ajoute ANTHROPIC_API_KEY dans Vercel.', 409);
+      return fail('Assistant non configuré : ajoute MISTRAL_API_KEY (gratuit) dans Vercel.', 409);
     const messageId = String(body.messageId || '');
     if (!isUuid(messageId)) return fail('Message introuvable.', 404);
     const rows = await sql`SELECT room_id FROM ex237_chat_messages WHERE id=${messageId} LIMIT 1`;

@@ -27,6 +27,9 @@ type State = {
   premium: boolean;
   limit: number;
   used: number;
+  // Accord des parents (ou élève majeur) déjà donné.
+  consent: boolean;
+  provider: string | null;
 };
 
 const STARTERS = [
@@ -111,6 +114,8 @@ export default function TutorView({
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [selected, setSelected] = useState<TMsg | null>(null);
+  const [consentChoice, setConsentChoice] = useState<'parent' | 'adult' | null>(null);
+  const [savingConsent, setSavingConsent] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -131,6 +136,8 @@ export default function TutorView({
         premium: !!d.premium,
         limit: Number(d.limit) || 0,
         used: Number(d.used) || 0,
+        consent: d.consent !== false,
+        provider: d.provider || null,
       });
       setMessages(d.messages || []);
       scrollToBottom();
@@ -190,6 +197,13 @@ export default function TutorView({
       scrollToBottom(true);
     } catch (e: any) {
       const data = e?.data || {};
+      if (e?.status === 403 && data.consentRequired) {
+        setMessages(cur => cur.filter(m => m.id !== tempId));
+        setText(questionText);
+        if (image && preview) setAttachment({ image, preview });
+        setState(s => (s ? { ...s, consent: false } : s));
+        return;
+      }
       if (e?.status === 403 && data.premiumRequired) {
         setMessages(cur => cur.filter(m => m.id !== tempId));
         setState(s => (s ? { ...s, limit: 0 } : s));
@@ -228,7 +242,12 @@ export default function TutorView({
     const questionText = value.trim();
     if ((!questionText && !attachment) || thinking || !state) return;
     if (state.used >= state.limit) {
-      notify(`Tu as utilisé tes ${state.limit} questions du jour. Reviens demain !`, 'error');
+      notify(
+        state.premium
+          ? `Tu as utilisé tes ${state.limit} questions du jour. Reviens demain !`
+          : `Tu as utilisé tes ${state.limit} questions gratuites du jour. Passe Premium pour en avoir plus, ou reviens demain.`,
+        'error'
+      );
       if (!state.premium) onPremium();
       return;
     }
@@ -237,6 +256,29 @@ export default function TutorView({
     setAttachment(null);
     if (inputRef.current) inputRef.current.style.height = '';
     ask(questionText, current?.image || null, current?.preview);
+  };
+
+  const giveConsent = async () => {
+    if (!consentChoice) return;
+    setSavingConsent(true);
+    try {
+      await post('/api/me', { action: 'tutor_consent', kind: consentChoice });
+      setState(s => (s ? { ...s, consent: true } : s));
+    } catch (e: any) {
+      notify(e.message || 'Réessaie dans un instant.', 'error');
+    } finally {
+      setSavingConsent(false);
+    }
+  };
+
+  const report = async (m: TMsg) => {
+    setSelected(null);
+    try {
+      await post('/api/me', { action: 'tutor_report', messageId: m.id });
+      notify('Merci : la réponse a été signalée à l’équipe Exam237.');
+    } catch (e: any) {
+      notify(e.message || 'Signalement impossible pour le moment.', 'error');
+    }
   };
 
   const clear = async () => {
@@ -351,6 +393,58 @@ export default function TutorView({
       </section>
     );
 
+  if (!state.consent)
+    return (
+      <section className={chat.chat}>
+        {header('Avant de commencer')}
+        <div className={styles.locked}>
+          <div className={styles.lockedCard}>
+            <span className={styles.bigIcon}>
+              <Icon name="cap" size={28} />
+            </span>
+            <h2>Avant de commencer</h2>
+            <p>
+              Le Prof IA est une <b>intelligence artificielle</b>
+              {state.provider ? ` (${state.provider})` : ''}. Tes questions lui sont envoyées pour
+              obtenir une réponse : n’y écris jamais ton nom complet, ton numéro ou ton adresse.
+            </p>
+            <p>
+              Si tu as moins de 18 ans, demande d’abord l’accord de ton parent ou tuteur. Le Prof IA
+              est réservé aux élèves de 13 ans et plus.
+            </p>
+            <div className={styles.consent} role="radiogroup" aria-label="Accord">
+              <label className={consentChoice === 'parent' ? styles.consentOn : ''}>
+                <input
+                  type="radio"
+                  name="tutor-consent"
+                  checked={consentChoice === 'parent'}
+                  onChange={() => setConsentChoice('parent')}
+                />
+                <span>Mon parent ou tuteur est d’accord</span>
+              </label>
+              <label className={consentChoice === 'adult' ? styles.consentOn : ''}>
+                <input
+                  type="radio"
+                  name="tutor-consent"
+                  checked={consentChoice === 'adult'}
+                  onChange={() => setConsentChoice('adult')}
+                />
+                <span>J’ai 18 ans ou plus</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-lg btn-block"
+              disabled={!consentChoice || savingConsent}
+              onClick={giveConsent}
+            >
+              {savingConsent ? 'Un instant…' : 'Commencer avec le Prof IA'}
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+
   /* ---------- Conversation ---------- */
 
   const left = Math.max(0, state.limit - state.used);
@@ -370,8 +464,9 @@ export default function TutorView({
       <div ref={listRef} className={chat.list}>
         <div className={chat.spacer} />
         <div className={styles.notice}>
-          Conversation privée. Le Prof IA est une intelligence artificielle : il peut se tromper,
-          vérifie avec tes cours.
+          Conversation privée. Le Prof IA est une intelligence artificielle
+          {state.provider ? ` (${state.provider})` : ''} : il peut se tromper, vérifie avec tes
+          cours. Une réponse fausse ou gênante ? Touche-la pour la signaler.
         </div>
 
         {!messages.length ? (
@@ -699,6 +794,15 @@ export default function TutorView({
                   }}
                 >
                   <Icon name="refresh" /> Réexpliquer plus simplement
+                </button>
+              ) : null}
+              {selected.role === 'assistant' && !selected.id.startsWith('tmp-') ? (
+                <button
+                  type="button"
+                  className={`${chat.menuItem} ${chat.danger}`}
+                  onClick={() => report(selected)}
+                >
+                  <Icon name="flag" /> Signaler cette réponse
                 </button>
               ) : null}
               <button type="button" className={chat.menuItem} onClick={() => setSelected(null)}>

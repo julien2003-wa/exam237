@@ -11,21 +11,35 @@ export { ASSISTANT_NAME };
   Assistant IA Exam237
   - Répond dans le chat de groupe aux messages qui contiennent @assistant (ou @Exam237),
     aux réponses faites à un de ses messages, et — en mode automatique — aux questions.
-  - Appelle l'API Claude (Messages API) avec la clé ANTHROPIC_API_KEY.
+  - Fournisseur : Claude (clé ANTHROPIC_API_KEY, payant) s'il est branché, sinon Mistral
+    (clé MISTRAL_API_KEY, formule gratuite, choisie par Pascal le 23/11/2026).
   - Répond aussi en privé (« Prof IA ») dans l'onglet dédié de l'élève.
   - Journalise chaque demande dans ex237_assistant_requests (sans le texte : les messages
     restent chiffrés dans ex237_chat_messages et ex237_tutor_messages).
   - Quotas par jour : dailyLimit pour les membres Premium, freeDailyLimit pour les comptes
-    gratuits (0 = assistant réservé au Premium).
+    gratuits (0 = assistant réservé au Premium), freeGlobalDailyLimit pour l'ensemble des
+    comptes gratuits (0 = sans plafond).
+  - Un élève doit d'abord cocher l'accord de ses parents (ou dire qu'il a 18 ans) : Mistral
+    l'exige pour les mineurs. Chaque réponse du Prof IA peut être signalée à l'admin.
 */
 
 export const ASSISTANT_USER_ID = 'assistant';
 
 export type AssistantMode = 'off' | 'mention' | 'auto';
-export type AssistantSettings = { mode: AssistantMode; dailyLimit: number; freeDailyLimit: number };
+export type AssistantSettings = {
+  mode: AssistantMode;
+  dailyLimit: number;
+  freeDailyLimit: number;
+  freeGlobalDailyLimit: number;
+};
 export type AssistantTrigger = 'mention' | 'followup' | 'auto' | 'admin' | 'tutor';
 
-const DEFAULT_SETTINGS: AssistantSettings = { mode: 'mention', dailyLimit: 30, freeDailyLimit: 0 };
+const DEFAULT_SETTINGS: AssistantSettings = {
+  mode: 'mention',
+  dailyLimit: 30,
+  freeDailyLimit: 3,
+  freeGlobalDailyLimit: 200,
+};
 const MODES: AssistantMode[] = ['off', 'mention', 'auto'];
 const EFFORTS = ['low', 'medium', 'high'];
 const SKIP_TOKEN = '[PASSER]';
@@ -39,11 +53,32 @@ const MODEL_PRICES: Record<string, [number, number]> = {
   'claude-opus-5-5': [4, 20],
 };
 
-export function assistantConfigured() {
-  return !!String(process.env.ANTHROPIC_API_KEY || '').trim();
+export type AiProvider = 'anthropic' | 'mistral';
+
+// Claude s'il est branché (payant, à l'usage), sinon Mistral (formule gratuite).
+export function aiProvider(): AiProvider | null {
+  if (String(process.env.ANTHROPIC_API_KEY || '').trim()) return 'anthropic';
+  if (String(process.env.MISTRAL_API_KEY || '').trim()) return 'mistral';
+  return null;
 }
 
+export function assistantConfigured() {
+  return aiProvider() !== null;
+}
+
+// Nom affiché aux élèves (transparence : ils savent quelle IA leur répond).
+export function providerLabel() {
+  const provider = aiProvider();
+  return provider === 'anthropic' ? 'Claude (Anthropic)' : provider === 'mistral' ? 'Mistral AI' : null;
+}
+
+const MISTRAL_DEFAULT_MODEL = 'mistral-medium-latest';
+// Petit modèle de secours : en formule gratuite, chaque modèle a ses propres limites.
+const MISTRAL_FALLBACK_MODEL = 'mistral-small-latest';
+
 export function assistantModel() {
+  if (aiProvider() === 'mistral')
+    return String(process.env.MISTRAL_MODEL || '').trim() || MISTRAL_DEFAULT_MODEL;
   return String(process.env.ANTHROPIC_MODEL || '').trim() || 'claude-haiku-5-5';
 }
 
@@ -88,6 +123,23 @@ async function createTables() {
   )`;
   await sql`CREATE INDEX IF NOT EXISTS ex237_assistant_requests_user_idx ON ex237_assistant_requests (user_id, created_at)`;
   await sql`CREATE INDEX IF NOT EXISTS ex237_assistant_requests_created_idx ON ex237_assistant_requests (created_at)`;
+  // Offre de l'élève au moment de la question (« free » / « premium ») : plafond global du gratuit.
+  await sql`ALTER TABLE ex237_assistant_requests ADD COLUMN IF NOT EXISTS plan TEXT`;
+  // Accord des parents (« parent ») ou élève majeur (« adult »), donné avant la première question.
+  await sql`CREATE TABLE IF NOT EXISTS ex237_ai_consents (
+    user_id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  // Réponses du Prof IA signalées par les élèves (visibles dans l'admin).
+  await sql`CREATE TABLE IF NOT EXISTS ex237_ai_reports (
+    id UUID PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    UNIQUE (user_id, message_id)
+  )`;
 }
 
 export function ensureAssistantTables() {
@@ -126,32 +178,99 @@ function normalizeSettings(raw: unknown): AssistantSettings {
   const free = Math.round(Number(value?.freeDailyLimit));
   const freeDailyLimit =
     Number.isFinite(free) && free >= 0 ? Math.min(free, 200) : DEFAULT_SETTINGS.freeDailyLimit;
-  return { mode, dailyLimit, freeDailyLimit };
+  const global = Math.round(Number(value?.freeGlobalDailyLimit));
+  const freeGlobalDailyLimit =
+    Number.isFinite(global) && global >= 0
+      ? Math.min(global, 5000)
+      : DEFAULT_SETTINGS.freeGlobalDailyLimit;
+  return { mode, dailyLimit, freeDailyLimit, freeGlobalDailyLimit };
 }
 
 export function dailyLimitFor(settings: AssistantSettings, premium: boolean) {
   return premium ? settings.dailyLimit : settings.freeDailyLimit;
 }
 
+async function storeSettings(settings: AssistantSettings) {
+  await db()`INSERT INTO ex237_settings(key,value,updated_at) VALUES('assistant',${JSON.stringify(settings)},NOW())
+             ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
+}
+
 export async function getAssistantSettings(): Promise<AssistantSettings> {
   await ensureAssistantTables();
-  const rows = await db()`SELECT value FROM ex237_settings WHERE key='assistant' LIMIT 1`;
-  return normalizeSettings((rows[0] as any)?.value ?? null);
+  const rows: any[] =
+    await db()`SELECT key,value FROM ex237_settings WHERE key IN ('assistant','assistant_free_v1')`;
+  const stored = rows.find(r => r.key === 'assistant')?.value ?? null;
+  let settings = normalizeSettings(stored);
+  if (!rows.some(r => r.key === 'assistant_free_v1')) {
+    // 23/11/2026 : Pascal ouvre le Prof IA aux comptes gratuits (3 questions par jour).
+    // Appliqué une seule fois : s'il remet 0 ensuite dans l'admin, son choix est gardé.
+    if (stored !== null && settings.freeDailyLimit === 0) {
+      settings = { ...settings, freeDailyLimit: DEFAULT_SETTINGS.freeDailyLimit };
+      await storeSettings(settings);
+    }
+    await db()`INSERT INTO ex237_settings(key,value,updated_at) VALUES('assistant_free_v1','1',NOW())
+               ON CONFLICT (key) DO NOTHING`;
+  }
+  return settings;
+}
+
+// Plafond de l'ensemble des comptes gratuits sur 24 h : il garde des réponses pour les Premium
+// et protège les limites de la formule gratuite de Mistral.
+export async function freeQuotaReached(settings: AssistantSettings) {
+  if (!settings.freeGlobalDailyLimit) return false;
+  const rows: any[] = await db()`SELECT COUNT(*)::int AS n FROM ex237_assistant_requests
+    WHERE plan='free' AND created_at>NOW()-INTERVAL '1 day' AND status IN ('pending','answered','error')`;
+  return Number(rows[0]?.n || 0) >= settings.freeGlobalDailyLimit;
 }
 
 export async function saveAssistantSettings(input: {
   mode?: unknown;
   dailyLimit?: unknown;
   freeDailyLimit?: unknown;
+  freeGlobalDailyLimit?: unknown;
 }) {
   const current = await getAssistantSettings();
   const next = normalizeSettings({
     ...current,
     ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)),
   });
-  await db()`INSERT INTO ex237_settings(key,value,updated_at) VALUES('assistant',${JSON.stringify(next)},NOW())
-             ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
+  await storeSettings(next);
   return next;
+}
+
+/* ---------------- Accord des parents et signalements ---------------- */
+
+export type AiConsentKind = 'parent' | 'adult';
+
+export async function hasAiConsent(userId: string) {
+  await ensureAssistantTables();
+  const rows: any[] =
+    await db()`SELECT 1 FROM ex237_ai_consents WHERE user_id=${userId} LIMIT 1`;
+  return !!rows[0];
+}
+
+export async function saveAiConsent(userId: string, kind: AiConsentKind) {
+  await ensureAssistantTables();
+  await db()`INSERT INTO ex237_ai_consents(user_id,kind,created_at) VALUES(${userId},${kind},NOW())
+             ON CONFLICT (user_id) DO UPDATE SET kind=EXCLUDED.kind,created_at=NOW()`;
+}
+
+// L'élève signale une réponse du Prof IA (seulement une réponse de sa propre conversation).
+export async function reportTutorAnswer(userId: string, messageId: string) {
+  await ensureAssistantTables();
+  await ensureSchema();
+  const rows: any[] = await db()`SELECT 1 FROM ex237_tutor_messages
+    WHERE id::text=${messageId} AND user_id=${userId} AND role='assistant' LIMIT 1`;
+  if (!rows[0]) return false;
+  await db()`INSERT INTO ex237_ai_reports(id,user_id,message_id,created_at)
+             VALUES(${crypto.randomUUID()},${userId},${messageId},NOW())
+             ON CONFLICT (user_id,message_id) DO UPDATE SET resolved_at=NULL,created_at=NOW()`;
+  return true;
+}
+
+export async function resolveAiReport(id: string) {
+  await ensureAssistantTables();
+  await db()`UPDATE ex237_ai_reports SET resolved_at=NOW() WHERE id::text=${id}`;
 }
 
 /* ---------------- Détection ---------------- */
@@ -324,6 +443,112 @@ export async function callClaude(
   }
 }
 
+/* ---------------- Appel à l'API Mistral (formule gratuite) ---------------- */
+
+// Blocs au format Claude (texte, photo en base64) → format de Mistral.
+function toMistralContent(content: ClaudeContent): string | Array<Record<string, unknown>> {
+  if (typeof content === 'string') return content;
+  return content.map((block: any) =>
+    block?.type === 'image' && block.source?.type === 'base64'
+      ? {
+          type: 'image_url',
+          image_url: `data:${block.source.media_type};base64,${block.source.data}`,
+        }
+      : { type: 'text', text: String(block?.text ?? '') }
+  );
+}
+
+// Texte de la réponse (les modèles qui « réfléchissent » renvoient aussi des blocs de réflexion).
+function mistralText(content: unknown) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+    .map((part: any) => part.text)
+    .join('\n');
+}
+
+function mistralError(data: any, status: number) {
+  const raw = data?.message ?? data?.detail ?? data?.error?.message;
+  const text = typeof raw === 'string' ? raw : raw ? JSON.stringify(raw) : '';
+  return (text || `HTTP ${status}`).slice(0, 300);
+}
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export async function callMistral(
+  system: string,
+  messages: ClaudeMessage[],
+  timeoutMs = 50_000
+): Promise<ClaudeResult> {
+  const key = String(process.env.MISTRAL_API_KEY || '').trim();
+  if (!key) throw new Error('MISTRAL_API_KEY manquante');
+  const base = (String(process.env.MISTRAL_API_URL || '').trim() || 'https://api.mistral.ai').replace(
+    /\/+$/,
+    ''
+  );
+  const preferred = assistantModel();
+  const models = preferred === MISTRAL_FALLBACK_MODEL ? [preferred] : [preferred, MISTRAL_FALLBACK_MODEL];
+  const payload = [
+    { role: 'system', content: system },
+    ...messages.map(m => ({ role: m.role, content: toMistralContent(m.content) })),
+  ];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let lastStatus = 0;
+  let lastError = '';
+  try {
+    for (const model of models) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await fetch(`${base}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json',
+            authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({ model, messages: payload, max_tokens: 3000, temperature: 0.3 }),
+          signal: controller.signal,
+        });
+        const data: any = await response.json().catch(() => ({}));
+        if (response.ok) {
+          const choice = data?.choices?.[0];
+          return {
+            text: mistralText(choice?.message?.content).trim(),
+            stopReason: choice?.finish_reason ?? null,
+            inputTokens: Number(data?.usage?.prompt_tokens || 0),
+            outputTokens: Number(data?.usage?.completion_tokens || 0),
+            model: String(data?.model || model),
+          };
+        }
+        lastStatus = response.status;
+        lastError = mistralError(data, response.status);
+        // Formule gratuite : une requête par seconde environ. On réessaie une fois.
+        if (response.status === 429 && attempt === 0) {
+          await pause(1200);
+          continue;
+        }
+        break;
+      }
+      // Clé refusée : inutile d'essayer l'autre modèle.
+      if (lastStatus === 401) break;
+    }
+    throw new Error(`API Mistral : ${lastError}`);
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('API Mistral : délai dépassé');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Fournisseur choisi par aiProvider() : Claude s'il est branché, sinon Mistral.
+export function callAI(system: string, messages: ClaudeMessage[], timeoutMs = 50_000) {
+  return aiProvider() === 'mistral'
+    ? callMistral(system, messages, timeoutMs)
+    : callClaude(system, messages, timeoutMs);
+}
+
 // Nettoie le Markdown/LaTeX éventuel : le chat affiche du texte brut.
 export function toPlainText(text: string) {
   let value = text
@@ -442,6 +667,8 @@ export type RunInput = {
   trigger: AssistantTrigger;
   // Quota du jour de l'élève (dépend de son offre : gratuite ou Premium).
   dailyLimit?: number;
+  // Compte gratuit : compté dans le plafond de l'ensemble des comptes gratuits.
+  free?: boolean;
 };
 
 export async function runAssistant(input: RunInput) {
@@ -450,9 +677,25 @@ export async function runAssistant(input: RunInput) {
   const settings = await getAssistantSettings();
   const requestId = crypto.randomUUID();
   const model = assistantModel();
+  const plan = !input.userId ? null : input.free ? 'free' : 'premium';
 
-  await sql`INSERT INTO ex237_assistant_requests(id,user_id,room_id,question_message_id,trigger,status,model,created_at)
-            VALUES(${requestId},${input.userId},${input.roomId},${input.questionId},${input.trigger},'pending',${model},NOW())`;
+  // Plafond du jour atteint pour l'ensemble des comptes gratuits.
+  if (input.free && input.userId && input.trigger !== 'admin' && (await freeQuotaReached(settings))) {
+    await sql`INSERT INTO ex237_assistant_requests(id,user_id,room_id,question_message_id,trigger,status,model,plan,created_at)
+              VALUES(${requestId},${input.userId},${input.roomId},${input.questionId},${input.trigger},'busy',${model},'free',NOW())`;
+    const busy: any[] = await sql`SELECT COUNT(*)::int AS n FROM ex237_assistant_requests
+                                  WHERE user_id=${input.userId} AND status='busy' AND created_at>NOW()-INTERVAL '1 day'`;
+    if (Number(busy[0]?.n || 0) <= 1 && input.trigger !== 'auto')
+      await postAssistantMessage(
+        input.roomId,
+        input.questionId,
+        'L’assistant gratuit a reçu beaucoup de questions aujourd’hui. Reviens demain, ou passe Premium pour continuer. En attendant, tes camarades du groupe peuvent t’aider ici.'
+      );
+    return { status: 'busy' as const, requestId };
+  }
+
+  await sql`INSERT INTO ex237_assistant_requests(id,user_id,room_id,question_message_id,trigger,status,model,plan,created_at)
+            VALUES(${requestId},${input.userId},${input.roomId},${input.questionId},${input.trigger},'pending',${model},${plan},NOW())`;
 
   // Limite quotidienne par élève (la demande en cours est comptée).
   const limit = input.dailyLimit ?? settings.dailyLimit;
@@ -505,7 +748,7 @@ export async function runAssistant(input: RunInput) {
 
   const stopTyping = input.trigger === 'auto' ? () => {} : startTyping(input.roomId);
   try {
-    const result = await callClaude(
+    const result = await callAI(
       systemPrompt({
         groupLabel: contextRows[0]?.group_label || null,
         examType: contextRows[0]?.exam_type || null,
@@ -555,7 +798,7 @@ export async function runAssistant(input: RunInput) {
 
 // Pour l'admin : tester l'assistant sans rien publier dans le chat.
 export async function testAssistant(question: string, groupLabel: string | null) {
-  const result = await callClaude(systemPrompt({ groupLabel }), [
+  const result = await callAI(systemPrompt({ groupLabel }), [
     { role: 'user', content: stripMention(question) },
   ]);
   return {
@@ -573,14 +816,15 @@ export async function assistantOverview() {
   const sql = db();
   await ensureAssistantTables();
   await ensureSchema();
-  const [settings, statsRows, usageRows, recentRows] = await Promise.all([
+  const [settings, statsRows, usageRows, recentRows, reportRows] = await Promise.all([
     getAssistantSettings(),
     sql`SELECT
           COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '1 day' AND status<>'skipped')::int AS day_count,
           COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '7 days' AND status<>'skipped')::int AS week_count,
           COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '30 days' AND status='answered')::int AS month_answered,
           COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '7 days' AND status='error')::int AS week_errors,
-          COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '7 days' AND status='limited')::int AS week_limited
+          COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '7 days' AND status IN ('limited','busy'))::int AS week_limited,
+          COUNT(*) FILTER (WHERE created_at>NOW()-INTERVAL '1 day' AND plan='free' AND status IN ('pending','answered','error'))::int AS day_free
         FROM ex237_assistant_requests`,
     sql`SELECT COALESCE(model,'') AS model,COALESCE(SUM(input_tokens),0)::bigint AS input_tokens,COALESCE(SUM(output_tokens),0)::bigint AS output_tokens
         FROM ex237_assistant_requests WHERE created_at>NOW()-INTERVAL '30 days' GROUP BY model`,
@@ -599,6 +843,21 @@ export async function assistantOverview() {
         WHERE a.status<>'skipped'
         ORDER BY a.created_at DESC
         LIMIT 30`,
+    // Réponses du Prof IA signalées par les élèves, avec la question qui les précède.
+    sql`SELECT r.id,r.user_id,r.created_at,p.display_name,
+               m.ciphertext AS a_ct,m.iv AS a_iv,m.auth_tag AS a_tag,
+               q.ciphertext AS q_ct,q.iv AS q_iv,q.auth_tag AS q_tag
+        FROM ex237_ai_reports r
+        LEFT JOIN ex237_user_profiles p ON p.user_id::text=r.user_id
+        LEFT JOIN ex237_tutor_messages m ON m.id::text=r.message_id
+        LEFT JOIN LATERAL (
+          SELECT ciphertext,iv,auth_tag FROM ex237_tutor_messages t
+          WHERE t.user_id=m.user_id AND t.role='user' AND t.created_at<=m.created_at
+          ORDER BY t.created_at DESC LIMIT 1
+        ) q ON TRUE
+        WHERE r.resolved_at IS NULL
+        ORDER BY r.created_at DESC
+        LIMIT 20`,
   ]);
 
   let costUsd = 0;
@@ -630,10 +889,20 @@ export async function assistantOverview() {
   const stats: any = (statsRows as any[])[0] || {};
   return {
     configured: assistantConfigured(),
+    provider: aiProvider(),
+    providerLabel: providerLabel(),
     model: assistantModel(),
     settings,
+    reports: (reportRows as any[]).map(row => ({
+      id: row.id,
+      createdAt: row.created_at,
+      studentName: row.display_name || 'Élève',
+      question: decrypt(tutorKey(String(row.user_id)), row.q_ct, row.q_iv, row.q_tag),
+      answer: decrypt(tutorKey(String(row.user_id)), row.a_ct, row.a_iv, row.a_tag),
+    })),
     stats: {
       day: Number(stats.day_count || 0),
+      dayFree: Number(stats.day_free || 0),
       week: Number(stats.week_count || 0),
       monthAnswered: Number(stats.month_answered || 0),
       weekErrors: Number(stats.week_errors || 0),
@@ -779,6 +1048,7 @@ export async function runTutor(input: {
   dailyLimit: number;
   classLabel: string | null;
   examType: string | null;
+  free?: boolean;
 }) {
   const sql = db();
   await ensureAssistantTables();
@@ -787,6 +1057,8 @@ export async function runTutor(input: {
   const used = await tutorUsedToday(input.userId);
   if (used >= input.dailyLimit)
     return { status: 'limited' as const, used, limit: input.dailyLimit };
+  if (input.free && (await freeQuotaReached(await getAssistantSettings())))
+    return { status: 'busy' as const, used, limit: input.dailyLimit };
 
   const questionText = input.text.trim() || (input.image ? 'Aide-moi avec cet exercice.' : '');
   const previous: any[] = await sql`
@@ -795,8 +1067,8 @@ export async function runTutor(input: {
   const question = await storeTutorMessage(input.userId, 'user', questionText, !!input.image);
   const requestId = crypto.randomUUID();
   const model = assistantModel();
-  await sql`INSERT INTO ex237_assistant_requests(id,user_id,room_id,question_message_id,trigger,status,model,created_at)
-            VALUES(${requestId},${input.userId},'tutor',${question.id},'tutor','pending',${model},NOW())`;
+  await sql`INSERT INTO ex237_assistant_requests(id,user_id,room_id,question_message_id,trigger,status,model,plan,created_at)
+            VALUES(${requestId},${input.userId},'tutor',${question.id},'tutor','pending',${model},${input.free ? 'free' : 'premium'},NOW())`;
 
   // Historique (sans les anciennes photos, qui ne sont pas conservées) + nouvelle question.
   const history = previous
@@ -834,7 +1106,7 @@ export async function runTutor(input: {
   } else messages.push({ role: 'user', content: current });
 
   try {
-    const result = await callClaude(
+    const result = await callAI(
       tutorPrompt({ classLabel: input.classLabel, examType: input.examType }),
       messages
     );
