@@ -7,7 +7,7 @@ import { db } from './db';
   Une seule requête par démarrage d'instance une fois la base à jour.
 */
 
-const SCHEMA_VERSION = '6.2';
+const SCHEMA_VERSION = '6.3';
 
 let ready: Promise<void> | null = null;
 
@@ -191,6 +191,16 @@ async function migrate() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
   await sql`CREATE INDEX IF NOT EXISTS ex237_reset_links_user_idx ON ex237_reset_links (user_id)`;
+
+  // Taille des fichiers (affichée avant l'ouverture), demandée une seule fois au stockage :
+  // chaque demande à Vercel Blob compte parmi les 10 000 « opérations simples » du mois en
+  // plan gratuit. Un fichier envoyé reçoit toujours un nom neuf : sa taille ne change jamais.
+  await sql`CREATE TABLE IF NOT EXISTS ex237_file_sizes (
+    pathname TEXT PRIMARY KEY,
+    size BIGINT NOT NULL,
+    content_type TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
 
   // Passage au modèle « presque tout Premium » : tous les sujets deviennent Premium,
   // puis l'admin choisit ses sujets gratuits (sinon un sujet corrigé par matière est

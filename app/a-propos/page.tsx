@@ -20,7 +20,7 @@ import { StickyActions } from '@/components/landing';
 import '../bienvenue/landing.css';
 
 // Tout le détail retiré de la page d'accueil : fonctionnement, Premium, calendrier, questions.
-export const revalidate = 600;
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: 'À propos',

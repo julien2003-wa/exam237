@@ -212,26 +212,62 @@ export async function GET(req: NextRequest) {
   return storedResponse(target.pathname, req, target);
 }
 
+type SizeInfo = { size: number; type: string | null };
+
+// Taille déjà connue (enregistrée lors d'une demande précédente) : rien n'est demandé au stockage.
+// Chaque head() compte parmi les 10 000 « opérations simples » du mois du plan gratuit de Vercel ;
+// au-delà, plus aucun fichier ne s'ouvre jusqu'au mois suivant.
+async function knownSize(pathname: string): Promise<SizeInfo | null> {
+  try {
+    await ensureSchema();
+    const rows: any[] =
+      await db()`SELECT size,content_type FROM ex237_file_sizes WHERE pathname=${pathname} LIMIT 1`;
+    const size = Number(rows[0]?.size);
+    if (size > 0) return { size, type: rows[0].content_type || null };
+  } catch (e) {
+    console.error('Taille du fichier non lue dans la base:', e);
+  }
+  return null;
+}
+
+// Un fichier envoyé reçoit toujours un nom neuf : sa taille, enregistrée une fois, ne change plus.
+function rememberSize(pathname: string, info: SizeInfo) {
+  const task = () =>
+    db()`INSERT INTO ex237_file_sizes(pathname,size,content_type,created_at)
+         VALUES(${pathname},${info.size},${info.type},NOW()) ON CONFLICT (pathname) DO NOTHING`;
+  const run = () =>
+    task().catch((e: unknown) => console.error('Taille du fichier non enregistrée:', e));
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
 // Taille du fichier, affichée avant l'ouverture (économie de données). Ne compte pas de vue.
 export async function HEAD(req: NextRequest) {
   if (await refuseIfClosed(req)) return new NextResponse(null, { status: 503 });
   const resolved = await resolveTarget(req);
   if (resolved instanceof NextResponse) return new NextResponse(null, { status: resolved.status });
   const { target } = resolved;
-  const source = target.pathname ? blobSource(target.pathname) : null;
+  const pathname = target.pathname || '';
+  const source = pathname ? blobSource(pathname) : null;
   if (!source) return new NextResponse(null, { status: 204 });
-  let info: { size: number; type: string | null } | null = null;
-  try {
-    const found = await head(source.id);
-    info = { size: found.size, type: found.contentType };
-  } catch {
-    // Fichier public d'un autre espace de stockage : on demande sa taille directement.
-    if (source.access === 'public')
-      try {
-        const r = await fetch(source.id, { method: 'HEAD' });
-        const size = Number(r.headers.get('content-length'));
-        if (r.ok && size > 0) info = { size, type: r.headers.get('content-type') };
-      } catch {}
+  let info: SizeInfo | null = await knownSize(pathname);
+  if (!info) {
+    try {
+      const found = await head(source.id);
+      info = { size: found.size, type: found.contentType };
+    } catch {
+      // Fichier public d'un autre espace de stockage : on demande sa taille directement.
+      if (source.access === 'public')
+        try {
+          const r = await fetch(source.id, { method: 'HEAD' });
+          const size = Number(r.headers.get('content-length'));
+          if (r.ok && size > 0) info = { size, type: r.headers.get('content-type') };
+        } catch {}
+    }
+    if (info) rememberSize(pathname, info);
   }
   if (!info) return new NextResponse(null, { status: 404 });
   return new NextResponse(null, {

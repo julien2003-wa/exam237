@@ -74,8 +74,12 @@ export default function Connexion() {
         if (r.ok) router.replace(target);
       })
       .catch(() => {});
-    fetch('/api/data?action=public', { cache: 'no-store' })
-      .then(r => r.json())
+    // /api/public est gardé en cache par Vercel ; en cas d'échec, lecture directe.
+    const readPublic = (url: string) =>
+      fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
+    readPublic('/api/public')
+      .then(d => (Array.isArray(d?.classes) ? d : readPublic('/api/data?action=public')))
+      .catch(() => readPublic('/api/data?action=public'))
       .then(d => {
         setClasses(d.classes || []);
         setWhatsapp(d.site?.whatsapp || '');

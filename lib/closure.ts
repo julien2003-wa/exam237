@@ -25,7 +25,8 @@ function parse(raw: unknown): Closure {
   return OPEN;
 }
 
-async function read(): Promise<Closure> {
+// Lecture directe dans la base. Échoue si la base ne répond pas (contrairement à getClosure).
+export async function readClosure(): Promise<Closure> {
   const rows: any[] = await db()`SELECT value FROM ex237_settings WHERE key=${KEY} LIMIT 1`;
   const value = parse(rows[0]?.value);
   cache = { value, at: Date.now() };
@@ -39,7 +40,7 @@ export async function getClosure(fresh = false): Promise<Closure> {
   if (!fresh && cache && Date.now() - cache.at < FRESH_MS) return cache.value;
   try {
     if (!reading)
-      reading = read().finally(() => {
+      reading = readClosure().finally(() => {
         reading = null;
       });
     return await reading;

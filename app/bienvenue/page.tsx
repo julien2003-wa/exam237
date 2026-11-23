@@ -25,9 +25,10 @@ import {
 } from '@/components/landing';
 import './landing.css';
 
-// Page de présentation publique. Les données viennent de la base (mises à jour toutes les 10 minutes).
+// Page de présentation publique. Les données viennent de la base : relues tout de suite après une
+// modification de l'admin (revalidatePath dans app/api/data/route.ts), sinon une fois par heure.
 // Le détail (fonctionnement, paiement, calendrier, questions) est sur la page À propos.
-export const revalidate = 600;
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: { absolute: 'Exam237 : les vrais sujets corrigés du BEPC, du Probatoire et du Bac' },

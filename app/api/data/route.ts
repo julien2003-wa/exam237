@@ -10,6 +10,8 @@ import { decryptMessage } from '@/lib/crypto';
 import { publishRoomEvent, realtimeConfigured } from '@/lib/realtime';
 import { getSiteSettings, publicSettings, saveSiteSettings } from '@/lib/settings';
 import { getClosure, setClosure } from '@/lib/closure';
+import { loadPublicData } from '@/lib/public-data';
+import { revalidatePath } from 'next/cache';
 import {
   assistantConfigured,
   assistantOverview,
@@ -64,6 +66,8 @@ async function deleteStored(pathname: string | null | undefined) {
   } catch (e) {
     console.error('Suppression Blob impossible:', pathname, e);
   }
+  // Taille mémorisée du fichier (affichée avant l'ouverture) : devenue inutile.
+  await db()`DELETE FROM ex237_file_sizes WHERE pathname=${pathname}`.catch(() => {});
 }
 
 function validHttpUrl(value: string) {
@@ -115,33 +119,9 @@ export async function GET(req: NextRequest) {
   const sql = db();
   const action = req.nextUrl.searchParams.get('action') || 'bootstrap';
 
-  // Page de connexion et page de présentation : classes ouvertes et contact WhatsApp.
-  if (action === 'public') {
-    const [groups, classes, site] = await Promise.all([
-      sql`SELECT id,code,label,exam_type,display_order FROM ex237_groups WHERE active=TRUE ORDER BY display_order,label`,
-      sql`SELECT c.code,c.label,c.exam_type,c.series,c.group_id,g.label AS group_label
-          FROM ex237_classes c LEFT JOIN ex237_groups g ON g.id=c.group_id
-          WHERE c.active=TRUE ORDER BY c.display_order,c.label`,
-      getSiteSettings().catch(() => null),
-    ]);
-    return json({
-      groups: groups.map((g: any) => ({
-        id: g.id,
-        code: g.code,
-        label: g.label,
-        examType: g.exam_type,
-      })),
-      classes: classes.map((c: any) => ({
-        code: c.code,
-        label: c.label,
-        examType: c.exam_type,
-        series: c.series,
-        groupId: c.group_id,
-        groupLabel: c.group_label,
-      })),
-      site: { whatsapp: site?.whatsapp || '', prices: site?.prices || null },
-    });
-  }
+  // Page de connexion : classes ouvertes et contact WhatsApp. Les pages récentes lisent
+  // /api/public (gardé en cache par Vercel) ; cette adresse reste pour les anciennes versions.
+  if (action === 'public') return json(await loadPublicData());
 
   const viewer = await getViewer(req);
   if (!viewer) return fail('Non connecté.', 401);
@@ -537,6 +517,21 @@ async function adminChatReports() {
    Actions de l'admin
    ========================================================================= */
 
+// Pages et données publiques gardées en cache par Vercel (les visiteurs ne réveillent pas la base) :
+// après chaque modification de l'admin, elles sont relues tout de suite. Sans modification,
+// elles sont relues au plus une fois par heure.
+const PUBLIC_PAGES = ['/api/site-state', '/api/public', '/bienvenue', '/a-propos'];
+
+function refreshPublicPages() {
+  for (const path of PUBLIC_PAGES) {
+    try {
+      revalidatePath(path);
+    } catch (e) {
+      console.error('Cache non vidé:', path, e);
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const closed = await refuseIfClosed(req);
   if (closed) return closed;
@@ -549,7 +544,9 @@ export async function POST(req: NextRequest) {
   const action = str(body.action);
   try {
     await ensureSchema();
-    return await adminAction(req, action, body);
+    const res = await adminAction(req, action, body);
+    if (res.status < 400) refreshPublicPages();
+    return res;
   } catch (e: any) {
     const { status, message } = friendlyDbError(e);
     return fail(message, status);
