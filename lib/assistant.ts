@@ -72,9 +72,12 @@ export function providerLabel() {
   return provider === 'anthropic' ? 'Claude (Anthropic)' : provider === 'mistral' ? 'Mistral AI' : null;
 }
 
-const MISTRAL_DEFAULT_MODEL = 'mistral-medium-latest';
-// Petit modèle de secours : en formule gratuite, chaque modèle a ses propres limites.
-const MISTRAL_FALLBACK_MODEL = 'mistral-small-latest';
+// Formule gratuite de Mistral (limites du compte au 23/11/2026) : chaque modèle a ses propres
+// limites. Mistral Large 3 (mistral-large-2512, lit les photos) : 250 000 jetons par minute ;
+// Medium et Small : 20 000 jetons par minute ; 1 requête par seconde pour chacun.
+// Large 3 répond donc d'abord ; Medium puis Small prennent le relais s'il refuse.
+const MISTRAL_DEFAULT_MODEL = 'mistral-large-2512';
+const MISTRAL_FALLBACK_MODELS = ['mistral-medium-latest', 'mistral-small-latest'];
 
 export function assistantModel() {
   if (aiProvider() === 'mistral')
@@ -471,7 +474,26 @@ function mistralText(content: unknown) {
 function mistralError(data: any, status: number) {
   const raw = data?.message ?? data?.detail ?? data?.error?.message;
   const text = typeof raw === 'string' ? raw : raw ? JSON.stringify(raw) : '';
-  return (text || `HTTP ${status}`).slice(0, 300);
+  // Type et code de Mistral (ex. « rate_limited 1300 ») : ils disent quelle limite bloque.
+  const kind = [data?.type ?? data?.error?.type, data?.code ?? data?.error?.code]
+    .filter(v => v !== undefined && v !== null && v !== '')
+    .join(' ');
+  return `${text || `HTTP ${status}`}${kind ? ` (${kind})` : ''}`.slice(0, 300);
+}
+
+// En-têtes de limites renvoyés par Mistral (aucune donnée secrète) pour les journaux Vercel.
+function mistralLimitHeaders(headers: Headers) {
+  const kept: string[] = [];
+  headers.forEach((value, name) => {
+    if (/^(x-)?ratelimit|^retry-after$/i.test(name)) kept.push(`${name}=${value}`);
+  });
+  return kept.join(' ').slice(0, 600);
+}
+
+// Attente avant de réessayer : celle demandée par Mistral (Retry-After), sinon 1,5 s ; au plus 6 s.
+function mistralRetryDelay(headers: Headers) {
+  const seconds = Number(headers.get('retry-after'));
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(6000, Math.ceil(seconds * 1000)) : 1500;
 }
 
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -488,7 +510,7 @@ export async function callMistral(
     ''
   );
   const preferred = assistantModel();
-  const models = preferred === MISTRAL_FALLBACK_MODEL ? [preferred] : [preferred, MISTRAL_FALLBACK_MODEL];
+  const models = [preferred, ...MISTRAL_FALLBACK_MODELS].filter((m, i, all) => all.indexOf(m) === i);
   const payload = [
     { role: 'system', content: system },
     ...messages.map(m => ({ role: m.role, content: toMistralContent(m.content) })),
@@ -498,7 +520,11 @@ export async function callMistral(
   let lastStatus = 0;
   let lastError = '';
   try {
-    for (const model of models) {
+    for (let index = 0; index < models.length; index++) {
+      const model = models[index];
+      // Un autre modèle prend le relais : courte pause, au cas où Mistral compterait les
+      // requêtes par seconde pour tout le compte et non modèle par modèle.
+      if (index > 0) await pause(1100);
       for (let attempt = 0; attempt < 2; attempt++) {
         const response = await fetch(`${base}/v1/chat/completions`, {
           method: 'POST',
@@ -523,14 +549,18 @@ export async function callMistral(
         }
         lastStatus = response.status;
         lastError = mistralError(data, response.status);
-        // Formule gratuite : une requête par seconde environ. On réessaie une fois.
+        // Journal Vercel : quel modèle, quelle limite (en-têtes de Mistral), jamais la clé.
+        console.warn(
+          `[Mistral] ${response.status} ${model} essai ${attempt + 1} : ${lastError} ${mistralLimitHeaders(response.headers)}`.trim()
+        );
+        // Limite atteinte : on attend puis on réessaie une fois le même modèle.
         if (response.status === 429 && attempt === 0) {
-          await pause(1200);
+          await pause(mistralRetryDelay(response.headers));
           continue;
         }
         break;
       }
-      // Clé refusée : inutile d'essayer l'autre modèle.
+      // Clé refusée : inutile d'essayer un autre modèle.
       if (lastStatus === 401) break;
     }
     throw new Error(`API Mistral : ${lastError}`);
